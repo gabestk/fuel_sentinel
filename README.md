@@ -241,9 +241,9 @@ SOFTWARE.
 ## 📧 Contato e Informações extras
 
 Para dúvidas ou informações sobre o projeto, entre em contato com o desenvolvedor principal:
--   Nome: (Gabriel Trajano de Almeida - verificar `pubspec.yaml` ou commits)
--   Email: (gabriel.trajano97@hotmail.com - verificar `pubspec.yaml` ou commits)
--   GitHub: [gabestk](https://github.com/gabestk) (Baseado na URL do clone no README original)
+-   Nome: (Gabriel Trajano de Almeida
+-   Email: (gabriel.trajano97@hotmail.com
+-   GitHub: [gabestk](https://github.com/gabestk)
 
 Este projeto contou com recursos do Conselho Nacional de Desenvolvimento
 Científico e Tecnológico (CNPq) que financiou parte desta pesquisa, por meio do projeto
