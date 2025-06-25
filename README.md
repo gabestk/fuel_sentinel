@@ -28,7 +28,7 @@ Este repositório contém o `Fuel Sentinel`, um aplicativo desenvolvido em Flutt
 
 ## 🔭 Visão Geral
 
-O `Fuel Sentinel` permite a conexão com adaptadores OBD-II via Bluetooth para ler diversos parâmetros do veículo. Os dados coletados são armazenados localmente utilizando Hive e, quando disponível, sincronizados com o Cloud Firestore (Firebase). O aplicativo também captura dados de sensores do dispositivo móvel e informações de GPS, enriquecendo a análise do comportamento de condução. Uma funcionalidade adicional permite o registro fotográfico de bombas de combustível, potencialmente para controle de abastecimento.
+O `Fuel Sentinel` permite a conexão com adaptadores OBD-II via Bluetooth para ler diversos parâmetros do veículo. Os dados coletados são armazenados localmente utilizando Hive e, quando disponível, sincronizados com o Amazon Timestream. O aplicativo também captura dados de sensores do dispositivo móvel e informações de GPS, enriquecendo a análise do comportamento de condução. Uma funcionalidade adicional permite o registro fotográfico de bombas de combustível, potencialmente para controle de abastecimento.
 
 ## ✨ Funcionalidades Principais
 
@@ -50,7 +50,7 @@ O `Fuel Sentinel` permite a conexão com adaptadores OBD-II via Bluetooth para l
     -   Lógica para detecção de falhas na comunicação com o veículo.
 -   **🗂️ Armazenamento de Dados:**
     -   **Local:** Utiliza Hive (`hive`, `hive_flutter`) para armazenamento persistente no dispositivo, permitindo funcionamento offline. Inclui diversos adaptadores Hive para objetos customizados.
-    -   **Nuvem:** Envio dos dados para o Cloud Firestore (`cloud_firestore`) para análise e backup.
+    -   **Nuvem:** Envio dos dados para o Amazon Timestream para análise e backup.
 -   **👤 Interface do Usuário:**
     -   Interface para condutores com visualização simplificada dos dados.
     -   Gráficos para visualização de dados históricos e em tempo real (`syncfusion_flutter_charts`).
