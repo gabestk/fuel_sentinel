@@ -245,8 +245,8 @@ Para dúvidas ou informações sobre o projeto, entre em contato com o desenvolv
 -   Email: (gabriel.trajano97@hotmail.com
 -   GitHub: [gabestk](https://github.com/gabestk)
 
-
 📂 Documentos e materiais adicionais estão disponíveis nesta pasta no Google Drive:  
+
 🔗 [Acessar Google Drive](https://drive.google.com/drive/folders/1bfGKY2hz2F1lzj6pN3G-zERPrBUgs_tr?usp=sharing)
 
 ---
