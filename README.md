@@ -244,7 +244,11 @@ Para dúvidas ou informações sobre o projeto, entre em contato com o desenvolv
 -   Nome: (Gabriel Trajano de Almeida
 -   Email: (gabriel.trajano97@hotmail.com
 -   GitHub: [gabestk](https://github.com/gabestk)
+  
+📂 Documentos e materiais adicionais estão disponíveis nesta pasta no Google Drive:  
+🔗 [Acessar Google Drive](https://drive.google.com/drive/folders/1bfGKY2hz2F1lzj6pN3G-zERPrBUgs_tr?usp=sharing)
 
+---
 Este projeto contou com recursos do Conselho Nacional de Desenvolvimento
 Científico e Tecnológico (CNPq) que financiou parte desta pesquisa, por meio do projeto
 Conecta2AI (Processo nº 405531/2022-2).
