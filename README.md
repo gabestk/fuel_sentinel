@@ -242,7 +242,7 @@ SOFTWARE.
 
 Para dúvidas ou informações sobre o projeto, entre em contato com o desenvolvedor principal:
 -   Nome: (Gabriel Trajano de Almeida
--   Email: (gabriel.trajano97@hotmail.com
+-   Email: (gabriel.trajano97@hotmail.com)
 -   GitHub: [gabestk](https://github.com/gabestk)
 
 📂 Documentos e materiais adicionais estão disponíveis nesta pasta no Google Drive:  
