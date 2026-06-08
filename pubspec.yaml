@@ -31,7 +31,7 @@ dependencies:
   flutter:
     sdk: flutter
   
-  
+  flutter_launcher_icons: ^0.14.3
   cloud_firestore: ^6.4.1
   firebase_core: ^4.9.0
   sensors_plus: ^7.0.0
@@ -80,6 +80,15 @@ dev_dependencies:
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+
+  image_path: "assets/icon/fuel_sentinel_icon.png"
+
+  adaptive_icon_background: "#081221"
+  adaptive_icon_foreground: "assets/icon/fuel_sentinel_icon.png"
 
 # The following section is specific to Flutter packages.
 flutter:
