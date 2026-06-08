@@ -1,11 +1,7 @@
 # Fuel Sentinel (Aplicativo OBD)
 
 <p align="center">
-  <img src="assets/images/fuel_sentinel_logo.png" width="700">
-</p>
-
-<p align="center">
-  <img src="assets/images/fuel_sentinel_icon.png" width="180">
+  <img src="assets/icon/fuel_sentinel_icon.png" width="180">
 </p>
 
 Um aplicativo mobile em Flutter para diagnóstico veicular e coleta de dados de sensores.
