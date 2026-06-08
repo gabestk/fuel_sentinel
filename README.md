@@ -1,5 +1,13 @@
 # Fuel Sentinel (Aplicativo OBD)
 
+<p align="center">
+  <img src="assets/images/fuel_sentinel_logo.png" width="700">
+</p>
+
+<p align="center">
+  <img src="assets/images/fuel_sentinel_icon.png" width="180">
+</p>
+
 Um aplicativo mobile em Flutter para diagnóstico veicular e coleta de dados de sensores.
 
 O Fuel Sentinel se conecta a adaptadores OBD-II via Bluetooth, registra o status do veículo e dados de GPS, armazena registros locais utilizando Hive e integra com o Firebase Cloud Firestore para sincronização com o backend.
