@@ -18,7 +18,6 @@ import '../dataBaseClass/pidDiscoveryClass.dart';
 import '../functions/obdPlugin.dart';
 import '../functions/csv_logger.dart';
 import '../functions/pastas.dart';
-import 'coletasSalvas.dart';
 import 'textWidget.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 import 'package:device_info_plus/device_info_plus.dart';
