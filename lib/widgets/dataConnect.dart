@@ -677,6 +677,8 @@ count = 0;
 
   bool _pararLeitura = false;
   String? _brutaNivel; // última resposta do adaptador ao 01 2F, para diagnóstico
+  bool? _nivelSuportado; // null: não deu para saber
+  bool _preparando = false;
 
   static String _pidLimpo(String pid) => pid.replaceAll(RegExp(r'\s'), '').toUpperCase();
   static bool _ehPidNivel(String pid) => _pidLimpo(pid) == '012F';
@@ -746,6 +748,16 @@ count = 0;
     }
     final intervalo = Duration(seconds: int.tryParse(confdata!.timereqobd) ?? 1);
     final elm = widget.elm;
+    // Primeira consulta: com o protocolo em automático o adaptador pode levar
+    // vários segundos procurando o protocolo do veículo. Consultar os PIDs
+    // suportados antes (com tempo de sobra) evita que essa demora caia no
+    // primeiro PID da coleta, e diz se o nível de combustível é informado.
+    if (mounted) setState(() => _preparando = true);
+    try {
+      final suportados = await elm.descobrirPids();
+      _nivelSuportado = suportados.isEmpty ? null : suportados.contains(0x2F);
+    } catch (_) {}
+    if (mounted) setState(() => _preparando = false);
     while (mounted && !_pararLeitura && elm.conectado) {
       final inicio = DateTime.now();
       final leituras = <ObdRawData>[];
@@ -760,7 +772,7 @@ count = 0;
         String bruta;
         try {
           bruta = await elm.enviar(pid.replaceAll(' ', ''),
-              timeout: Duration(seconds: _ehPidVin(pid) ? 5 : 2));
+              timeout: Duration(seconds: _ehPidVin(pid) ? 5 : 3));
         } catch (_) {
           bruta = '';
         }
@@ -1320,6 +1332,11 @@ count = 0;
 
   /// Explica por que o nível ainda não apareceu.
   String _motivoSemNivel() {
+    if (_preparando) return 'Preparando o adaptador (detectando o protocolo do veículo)...';
+    if (_nivelSuportado == false) {
+      return 'O veículo (ou o emulador) não lista o PID 01 2F entre os suportados. '
+          'No emulador, habilite o nível de combustível.';
+    }
     final b = _brutaNivel;
     if (b == null) return 'Aguardando a primeira leitura do nível...';
     if (b.isEmpty) return 'O adaptador não respondeu ao PID 01 2F (tempo esgotado).';

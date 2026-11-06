@@ -77,10 +77,16 @@ class Elm327 {
       aoRegistrar?.call('$comando -> ${resposta.replaceAll(RegExp(r'[\r\n>]+'), ' ').trim()}');
       return resposta.replaceAll('>', '').trim();
     } on TimeoutException {
-      _pendente = null;
       aoRegistrar?.call('$comando -> (sem resposta em ${timeout.inMilliseconds} ms)');
-      // descarta uma resposta atrasada para ela não ser lida como a do próximo comando
-      await Future<void>.delayed(const Duration(milliseconds: 300));
+      // A resposta pode chegar atrasada (por exemplo, enquanto o adaptador busca
+      // o protocolo). Espera por ela mais um pouco e a descarta, para ela não ser
+      // lida como a resposta do próximo comando.
+      final atrasada = Completer<String>();
+      _pendente = atrasada;
+      try {
+        await atrasada.future.timeout(const Duration(seconds: 3));
+      } catch (_) {}
+      if (identical(_pendente, atrasada)) _pendente = null;
       _buffer.clear();
       return '';
     }
