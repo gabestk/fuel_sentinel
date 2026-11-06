@@ -17,6 +17,16 @@ allprojects {
 }
 
 rootProject.buildDir = "../build"
+
+// Plugins antigos (ex.: flutter_bluetooth_serial 0.4.0) não declaram o "namespace"
+// exigido pelo Android Gradle Plugin 8. Usa o "group" do plugin como namespace.
+subprojects {
+    plugins.withId("com.android.library") {
+        if (project.android.namespace == null) {
+            project.android.namespace = project.group.toString()
+        }
+    }
+}
 subprojects {
      afterEvaluate { project ->
         if (project.plugins.hasPlugin("com.android.application") ||
