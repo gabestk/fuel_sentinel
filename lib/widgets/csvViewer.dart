@@ -172,8 +172,8 @@ class _CsvViewerState extends State<CsvViewer> {
           width: largura,
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
           decoration: BoxDecoration(
-            border: Border(right: BorderSide(color: Colors.grey.shade300)),
-            color: cabecalho ? const Color(0xFFE8F3EE) : null,
+            border: Border(right: BorderSide(color: Theme.of(context).dividerColor)),
+            color: cabecalho ? Theme.of(context).colorScheme.secondaryContainer : null,
           ),
           child: Text(s,
               maxLines: cabecalho ? 3 : 1,
@@ -200,7 +200,7 @@ class _CsvViewerState extends State<CsvViewer> {
                     itemBuilder: (_, i) {
                       final l = t.linhas[i];
                       return Container(
-                        color: i.isEven ? null : const Color(0xFFF7F9F8),
+                        color: i.isEven ? null : Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
                         child: Row(children: [
                           for (var c = 0; c < t.colunas.length; c++) celula(c < l.length ? l[c] : '')
                         ]),
@@ -220,7 +220,6 @@ class _CsvViewerState extends State<CsvViewer> {
   Widget build(BuildContext context) {
     final t = _tabela;
     return Scaffold(
-      backgroundColor: const Color(0xFFF6F8F7),
       appBar: AppBar(
         backgroundColor: _verde,
         foregroundColor: Colors.white,

@@ -24,6 +24,7 @@ import '../functions/elm327.dart';
 import '../functions/obd_calculados.dart';
 import '../functions/obd_pids.dart';
 import '../functions/pastas.dart';
+import '../functions/preferencias.dart';
 import 'coletasSalvas.dart';
 import 'csvViewer.dart';
 
@@ -51,6 +52,7 @@ class _PidScannerState extends State<PidScanner> {
   String? _dispositivo;
   String _versao = '';
   String _protocolo = '';
+  String _vin = '';
   final List<String> _log = [];
 
   List<int> _suportados = [];
@@ -128,6 +130,9 @@ class _PidScannerState extends State<PidScanner> {
     final pids = prefs.getStringList(_chavePids) ?? [];
     final calc = prefs.getStringList(_chaveCalc) ?? [];
     final taxa = prefs.getInt(_chaveTaxa) ?? 1;
+    final gps = prefs.getBool(chaveScannerGps) ?? true;
+    final sensores = prefs.getBool(chaveScannerSensores) ?? true;
+    final rapida = prefs.getBool(chaveScannerRapida) ?? true;
     final m = <String, double>{};
     for (final k in _param.paraMapa().keys) {
       final v = prefs.getDouble('$_prefixoParam$k');
@@ -138,6 +143,9 @@ class _PidScannerState extends State<PidScanner> {
       _selecionados = pids.map((s) => int.parse(s, radix: 16)).toSet();
       _calcSelecionados = calc.toSet();
       _taxaHz = _taxas.contains(taxa) ? taxa : 1;
+      _usarGps = gps;
+      _usarSensores = sensores;
+      _primeiraResposta = rapida;
       _param.carregar(m);
     });
   }
@@ -151,6 +159,9 @@ class _PidScannerState extends State<PidScanner> {
   Future<void> _salvarOpcoes() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_chaveTaxa, _taxaHz);
+    await prefs.setBool(chaveScannerGps, _usarGps);
+    await prefs.setBool(chaveScannerSensores, _usarSensores);
+    await prefs.setBool(chaveScannerRapida, _primeiraResposta);
     for (final e in _param.paraMapa().entries) {
       await prefs.setDouble('$_prefixoParam${e.key}', e.value);
     }
@@ -246,6 +257,7 @@ class _PidScannerState extends State<PidScanner> {
         if (mounted) setState(() => _status = m);
       });
       _protocolo = await _elm.protocolo();
+      _vin = await _elm.lerVin();
       if (!mounted) return;
       setState(() {
         _suportados = pids;
@@ -322,6 +334,8 @@ class _PidScannerState extends State<PidScanner> {
       tabelaCalculados.where((c) => c.pidsNecessarios(_suportados) != null).toList();
 
   Future<void> _iniciarColeta() async {
+    // pega o que foi mudado na página de Configuração
+    await _carregarPreferencias();
     final pidsCsv = _selecionados.where(_suportados.contains).toList()..sort();
     final calcs =
         _calcDisponiveis.where((c) => _calcSelecionados.contains(c.id)).toList();
@@ -633,6 +647,8 @@ class _PidScannerState extends State<PidScanner> {
             if (conectado && (_versao.isNotEmpty || _protocolo.isNotEmpty)) ...[
               const SizedBox(height: 4),
               Text('$_versao  ·  $_protocolo', style: const TextStyle(color: Colors.grey, fontSize: 12)),
+              if (_vin.isNotEmpty)
+                SelectableText('VIN: $_vin', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
             ],
             if (_emColeta) ...[
               const Divider(),
@@ -701,13 +717,23 @@ class _PidScannerState extends State<PidScanner> {
           title: const Text('Gravar GPS do celular'),
           subtitle: const Text('Latitude, longitude, altitude, velocidade e precisão'),
           value: _usarGps,
-          onChanged: _emColeta ? null : (v) => setState(() => _usarGps = v),
+          onChanged: _emColeta
+              ? null
+              : (v) {
+                  setState(() => _usarGps = v);
+                  _salvarOpcoes();
+                },
         ),
         SwitchListTile(
           dense: true,
           title: const Text('Gravar acelerômetro e giroscópio do celular'),
           value: _usarSensores,
-          onChanged: _emColeta ? null : (v) => setState(() => _usarSensores = v),
+          onChanged: _emColeta
+              ? null
+              : (v) {
+                  setState(() => _usarSensores = v);
+                  _salvarOpcoes();
+                },
         ),
         SwitchListTile(
           dense: true,
@@ -715,7 +741,12 @@ class _PidScannerState extends State<PidScanner> {
           subtitle: const Text(
               'Aceita a primeira ECU que responder. Desligue se aparecerem muitos valores vazios.'),
           value: _primeiraResposta,
-          onChanged: _emColeta ? null : (v) => setState(() => _primeiraResposta = v),
+          onChanged: _emColeta
+              ? null
+              : (v) {
+                  setState(() => _primeiraResposta = v);
+                  _salvarOpcoes();
+                },
         ),
       ],
     );

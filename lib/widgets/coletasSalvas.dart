@@ -103,7 +103,6 @@ class _ColetasPageState extends State<ColetasPage> {
   Widget build(BuildContext context) {
     final a = _arquivos;
     return Scaffold(
-      backgroundColor: const Color(0xFFF6F8F7),
       appBar: AppBar(
         backgroundColor: const Color(0xFF008355),
         foregroundColor: Colors.white,

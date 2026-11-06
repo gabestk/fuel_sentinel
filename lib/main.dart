@@ -8,6 +8,7 @@ import 'package:obdapp/dataBaseClass/obdRawData.dart';
 import 'package:obdapp/dataBaseClass/pidDiscoveryClass.dart';
 import 'package:obdapp/dataBaseClass/vehiclesUser.dart';
 import 'package:obdapp/functions/InternalDatabase.dart';
+import 'package:obdapp/functions/preferencias.dart';
 import 'package:obdapp/route/autoroute.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:workmanager/workmanager.dart';
@@ -94,19 +95,31 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   final _appRouter = AppRouter();
+  ThemeMode _tema = ThemeMode.system;
+
+  ThemeMode get tema => _tema;
+
+  @override
+  void initState() {
+    super.initState();
+    carregarTema().then((t) {
+      if (mounted) setState(() => _tema = t);
+    });
+  }
+
+  /// Troca o tema (Configuração > Aparência) e guarda a escolha.
+  void definirTema(ThemeMode t) {
+    setState(() => _tema = t);
+    salvarTema(t);
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp.router(
       routerConfig: _appRouter.config(),
-      theme: ThemeData(
-        useMaterial3: true,
-
-        // Define the default brightness and colors.
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF26B07F),
-          // ···
-        ),
-      ),
+      theme: temaDoApp(Brightness.light),
+      darkTheme: temaDoApp(Brightness.dark),
+      themeMode: _tema,
     );
   }
 }

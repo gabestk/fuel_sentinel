@@ -5,7 +5,7 @@
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bluetooth_serial/flutter_bluetooth_serial.dart';
-import 'package:hive_flutter/adapters.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../dataBaseClass/confSimu.dart';
@@ -459,8 +459,21 @@ class _FloatState extends State<InitBluetooth> {
 
   @override
   Widget build(BuildContext context) {
+    // acompanha mudanças feitas na página de Configuração (OBD/GPS ligados)
+    if (Hive.isBoxOpen('conf')) {
+      return ValueListenableBuilder<Box<Confdata>>(
+        valueListenable: Hive.box<Confdata>('conf').listenable(),
+        builder: (context, box, _) {
+          if (box.isNotEmpty) confdata = box.getAt(0);
+          return _pagina(context);
+        },
+      );
+    }
+    return _pagina(context);
+  }
+
+  Widget _pagina(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF6F8F7),
       body: ListView(
         padding: const EdgeInsets.only(bottom: 140),
         children: [

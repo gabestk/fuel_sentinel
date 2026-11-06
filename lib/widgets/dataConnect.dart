@@ -113,7 +113,7 @@ class _ConnectState extends State<Data_Connect> {
     final pos = _position;
     _csv?.gravar([
       carimboObdlink(DateTime.now()),
-      for (final p in _pidsCsv) porPid[p] ?? '',
+      for (final p in _pidsCsv) porPid[p] ?? (_ehPidVin(p) ? vin.response : ''),
       pos == null ? '' : pos.latitude.toStringAsFixed(7),
       pos == null ? '' : pos.longitude.toStringAsFixed(7),
     ]);
@@ -468,6 +468,7 @@ class _ConnectState extends State<Data_Connect> {
             }
           }
         }
+        _registrarVin(responses1);
         setState(() {
           _responses = responses1;
         });
@@ -618,6 +619,23 @@ count = 0;
     }
   }
 
+  bool _ehPidVin(String pid) => pid.replaceAll(' ', '').startsWith('0902');
+
+  /// Guarda o VIN lido: mostra na tela, usa nos registros e salva na configuração.
+  void _registrarVin(List<ObdRawData> leituras) {
+    for (final r in leituras) {
+      final v = r.obddata.response.trim();
+      if (_ehPidVin(r.pid) && v.length == 17 && v != vin.response) {
+        vin = ObdData(unit: '', title: 'VIN', response: v);
+        final c = confdata;
+        if (c != null && confapp != null && confapp!.isNotEmpty) {
+          c.vin = v;
+          confapp!.putAt(0, c);
+        }
+      }
+    }
+  }
+
   /// PIDs pedidos ao veículo: os marcados na aba Abastecimento. Sem nenhum
   /// marcado, usa o nível de combustível e o VIN, como antes.
   String _pidsAtivosJson() {
@@ -653,12 +671,19 @@ count = 0;
     // O ObdPlugin espera 350 ms por PID. O intervalo entre pedidos nunca é menor
     // que esse tempo, para um pedido não atropelar o anterior.
     final intervaloConf = int.parse(confdata!.timereqobd) * 1000;
-    final intervaloMinimo = quantidade * 350 + 300;
+    final temVin = (json.decode(pidsJson) as List).any((p) => _ehPidVin(p["PID"].toString()));
+    final intervaloMinimo = quantidade * 350 + (temVin ? 650 : 0) + 300;
     final intervalo = Duration(milliseconds: max(intervaloConf, intervaloMinimo));
     t2 = Timer.periodic(intervalo, (timer) async {
       _timer = timer;
       if (widget.obd2.connection?.isConnected == true) {
-        await widget.obd2.getParamsFromJSON(pidsJson);
+        // o VIN não muda: depois de lido, deixa de ser pedido
+        final pedido = (json.decode(pidsJson) as List)
+            .where((p) => !(vin.response.isNotEmpty && _ehPidVin(p["PID"].toString())))
+            .toList();
+        if (pedido.isNotEmpty) {
+          await widget.obd2.getParamsFromJSON(json.encode(pedido));
+        }
       }
     });
   }
@@ -1151,7 +1176,7 @@ count = 0;
           value: (mediaMovel / 100).clamp(0.0, 1.0),
           minHeight: 10,
           color: _verde,
-          backgroundColor: const Color(0xFFE3EFE9),
+          backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
         ),
       ),
       const SizedBox(height: 6),
@@ -1221,7 +1246,9 @@ count = 0;
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: ok ? const Color(0xFFE6F4EC) : const Color(0xFFFDECEA),
+        color: ok
+            ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.5)
+            : Theme.of(context).colorScheme.errorContainer.withValues(alpha: 0.6),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
@@ -1315,7 +1342,7 @@ count = 0;
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: const Color(0xFFF6F8F7),
+      color: Theme.of(context).scaffoldBackgroundColor,
       child: ListView(
         padding: const EdgeInsets.only(top: 6, bottom: 96),
         children: [

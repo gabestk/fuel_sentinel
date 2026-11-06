@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bluetooth_serial/flutter_bluetooth_serial.dart';
 import 'package:math_expressions/math_expressions.dart';
 
+import 'obd_pids.dart' show decodificarVin;
+
 enum Mode { parameter, config, dtc, at }
 
 /// Never run multiple command functions at the same time. This may result in errors for which there is no warranty
@@ -187,13 +189,16 @@ class ObdPlugin {
     }
 
     _write(stm[lastIndex]["PID"], requestCode);
+    // o VIN vem em vários quadros e demora mais para chegar
+    int espera(dynamic item) =>
+        item["PID"].toString().replaceAll(" ", "").startsWith("0902") ? 1000 : 350;
     if (!configed) {
-      Future.delayed(const Duration(milliseconds: 350), () {
+      Future.delayed(Duration(milliseconds: espera(stm[lastIndex])), () {
         getParamsFromJSON(jsonString, lastIndex: (lastIndex + 1));
       });
     }
 
-    return ((stm.length * 350) + 150);
+    return stm.fold<int>(150, (soma, item) => soma + espera(item));
   }
 
   Future<int> getDTCFromJSON(String stringJson,
@@ -363,16 +368,21 @@ class ObdPlugin {
                   .replaceAll("<", "")
                   .replaceAll(">", "");
 
+              // VIN (09 02): resposta em vários quadros, decodificada à parte.
+              // Antes ela caía na fórmula da descrição e o VIN ficava vazio.
+              final ehVin = runningService["PID"]
+                  .toString()
+                  .replaceAll(" ", "")
+                  .startsWith("0902");
               String validResponse = "";
-              if (runningService["PID"] == "09 02 5") {
-                validResponse = decodeVINCAN(response);
+              if (ehVin) {
+                dyResponse = decodificarVin(response);
               } else {
                 validResponse = response
                     .replaceAll("\n", "")
                     .replaceAll("\r", "")
                     .replaceAll(">", "")
                     .replaceAll("SEARCHING...", "");
-              }
               if (validResponse.contains(
                       runningService["unit"].toString().toUpperCase()) ||
                   validResponse.contains(
@@ -404,6 +414,7 @@ class ObdPlugin {
                 }
               } else {
                 dyResponse = validResponse.toString();
+              }
               }
               runningService["response"] = dyResponse;
               parameterResponse.add(runningService);

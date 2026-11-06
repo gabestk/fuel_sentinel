@@ -242,4 +242,37 @@ void main() {
       expect(t.tempos(), [2.0]);
     });
   });
+
+  group('VIN', () {
+    const vin = '9BWGK61J5A0100753';
+    final hex = vin.codeUnits.map((c) => c.toRadixString(16).toUpperCase().padLeft(2, '0')).toList();
+
+    test('CAN em vários quadros, com eco e contagem de bytes', () {
+      final r = '0902\r014\r0: 49 02 01 ${hex.sublist(0, 3).join(' ')}\r'
+          '1: ${hex.sublist(3, 10).join(' ')}\r2: ${hex.sublist(10).join(' ')}\r\r>';
+      expect(decodificarVin(r), vin);
+      expect(decodificarVin(r.replaceAll(' ', '')), vin);
+    });
+
+    test('CAN com cabeçalho', () {
+      final r = '7E8 10 14 49 02 01 ${hex.sublist(0, 3).join(' ')}\r'
+          '7E8 21 ${hex.sublist(3, 10).join(' ')}\r7E8 22 ${hex.sublist(10).join(' ')}';
+      expect(decodificarVin(r), vin);
+    });
+
+    test('ISO 9141 / KWP, uma linha por pedaço', () {
+      final b = ['00', '00', '00', ...hex];
+      final r = [
+        for (var n = 0; n < 5; n++)
+          '49 02 0${n + 1} ${b.sublist(n * 4, n * 4 + 4).join(' ')}'
+      ].join('\r');
+      expect(decodificarVin(r), vin);
+    });
+
+    test('sem resposta', () {
+      expect(decodificarVin('NO DATA'), '');
+      expect(decodificarVin('SEARCHING...\rUNABLE TO CONNECT'), '');
+      expect(decodificarVin(''), '');
+    });
+  });
 }

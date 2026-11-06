@@ -97,6 +97,10 @@ class Elm327 {
     return versao.replaceAll(RegExp(r'\s+'), ' ').replaceAll('ATZ', '').trim();
   }
 
+  /// VIN do veículo (modo 09, PID 02), ou '' se o veículo não informar.
+  Future<String> lerVin() async =>
+      decodificarVin(await enviar('0902', timeout: const Duration(seconds: 5)));
+
   /// Protocolo detectado (ex.: "ISO 15765-4 (CAN 11/500)").
   Future<String> protocolo() async => (await enviar('ATDP')).trim();
 

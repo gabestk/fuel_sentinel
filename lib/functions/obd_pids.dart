@@ -333,3 +333,57 @@ LeituraPid interpretar(String bruta, PidDef def) {
   final hex = b.map(hex2).join(' ');
   return LeituraPid([for (final s in def.saidas) s.formula(b)], hex);
 }
+
+// ---------------------------------------------------------------------------
+// VIN (modo 09, PID 02)
+// ---------------------------------------------------------------------------
+
+/// Caracteres válidos num VIN (sem I, O e Q).
+final _caracterVin = RegExp(r'[A-HJ-NPR-Z0-9]');
+
+/// Extrai o VIN da resposta ao comando "0902", em qualquer um dos formatos
+/// que o ELM327 devolve:
+///  - CAN, em vários quadros: "014\r0: 49 02 01 39 42 57\r1: 47 4B ...\r2: ..."
+///  - CAN com cabeçalho: "7E8 10 14 49 02 01 39 42 57\r7E8 21 47 4B ..."
+///  - ISO 9141/KWP, uma linha por pedaço: "49 02 01 00 00 00 39\r49 02 02 42 57 47 4B..."
+/// Devolve '' se não encontrar 17 caracteres válidos.
+String decodificarVin(String bruta) {
+  if (respostaSemDados(bruta)) return '';
+  var r = bruta.toUpperCase().replaceAll('>', '');
+  for (final n in _ruido) {
+    r = r.replaceAll(n, '\n');
+  }
+  final bytes = <int>[];
+  var achou = false;
+  for (var linha in r.split(RegExp(r'[\r\n]+'))) {
+    linha = linha.trim();
+    if (linha.isEmpty) continue;
+    // índice do quadro CAN ("0:", "1:"...)
+    linha = linha.replaceFirst(RegExp(r'^[0-9A-F]{1,2}:'), '');
+    var hex = linha.replaceAll(RegExp(r'\s'), '');
+    if (!RegExp(r'^[0-9A-F]+$').hasMatch(hex)) continue;
+    if (hex == '0902') continue; // eco do comando
+    final i = hex.indexOf('4902');
+    if (i >= 0) {
+      achou = true;
+      // depois de "49 02" vem o número do item/sequência (1 byte)
+      hex = hex.substring(i + 4);
+      hex = hex.length >= 2 ? hex.substring(2) : '';
+    } else if (!achou) {
+      continue; // contagem de bytes ("014") ou lixo antes do início
+    } else if (hex.length.isOdd || hex.length > 16 && hex.startsWith('7E')) {
+      // quadro de continuação com cabeçalho CAN: "7E821..." -> tira cabeçalho e índice
+      final m = RegExp(r'^7E[0-9A-F]2[0-9A-F]').firstMatch(hex);
+      if (m != null) hex = hex.substring(m.end);
+    }
+    for (var k = 0; k + 1 < hex.length; k += 2) {
+      bytes.add(int.parse(hex.substring(k, k + 2), radix: 16));
+    }
+  }
+  final texto = String.fromCharCodes(bytes.where((b) => b >= 0x20 && b < 0x7F))
+      .split('')
+      .where((c) => _caracterVin.hasMatch(c))
+      .join();
+  if (texto.length < 17) return '';
+  return texto.substring(texto.length - 17);
+}
