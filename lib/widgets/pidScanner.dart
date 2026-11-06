@@ -15,7 +15,6 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_bluetooth_serial/flutter_bluetooth_serial.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:path_provider/path_provider.dart' as path_prov;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -24,6 +23,9 @@ import '../functions/csv_logger.dart';
 import '../functions/elm327.dart';
 import '../functions/obd_calculados.dart';
 import '../functions/obd_pids.dart';
+import '../functions/pastas.dart';
+import 'coletasSalvas.dart';
+import 'csvViewer.dart';
 
 enum _Etapa { desconectado, conectando, buscando, pronto, coletando, parando }
 
@@ -154,22 +156,8 @@ class _PidScannerState extends State<PidScanner> {
     }
   }
 
-  Future<Directory> _pastaColetas() async {
-    Directory? base;
-    if (Platform.isAndroid) base = await path_prov.getExternalStorageDirectory();
-    base ??= await path_prov.getApplicationDocumentsDirectory();
-    return Directory('${base.path}/coletas_obd');
-  }
-
   Future<void> _listarColetas() async {
-    final pasta = await _pastaColetas();
-    if (!await pasta.exists()) return;
-    final arquivos = pasta
-        .listSync()
-        .whereType<File>()
-        .where((f) => f.path.toLowerCase().endsWith('.csv'))
-        .toList()
-      ..sort((a, b) => b.path.compareTo(a.path));
+    final arquivos = await listarColetas();
     if (mounted) setState(() => _coletas = arquivos);
   }
 
@@ -367,7 +355,7 @@ class _PidScannerState extends State<PidScanner> {
       'Elapsed time (sec)',
     ];
     try {
-      _logger = await CsvLogger.criar(await _pastaColetas(),
+      _logger = await CsvLogger.criar(await pastaColetas(),
           'CSVLog_${carimboArquivo(DateTime.now()).replaceAll('-', '')}.csv', cabecalho);
     } catch (e) {
       await _pararSensores();
@@ -494,7 +482,15 @@ class _PidScannerState extends State<PidScanner> {
     _logger = null;
     if (logger != null) {
       await logger.fechar();
-      _aviso('Coleta salva: ${logger.linhas} linhas em ${logger.arquivo.path}');
+      if (mounted) {
+        final arquivo = logger.arquivo;
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(
+            content: Text('Coleta salva: ${logger.linhas} linhas'),
+            action: SnackBarAction(label: 'Abrir', onPressed: () => abrirCsv(context, arquivo)),
+          ));
+      }
     }
     await _listarColetas();
     if (!mounted) return;
@@ -502,24 +498,6 @@ class _PidScannerState extends State<PidScanner> {
       _etapa = _elm.conectado ? _Etapa.pronto : _Etapa.desconectado;
       _status = _elm.conectado ? '${_suportados.length} PIDs suportados' : 'Desconectado';
     });
-  }
-
-  Future<void> _apagar(File f) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Apagar coleta?'),
-        content: Text(f.uri.pathSegments.last),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Apagar')),
-        ],
-      ),
-    );
-    if (ok == true) {
-      await f.delete();
-      await _listarColetas();
-    }
   }
 
   // -------------------------------------------------------------------------
@@ -893,16 +871,7 @@ class _PidScannerState extends State<PidScanner> {
               style: const TextStyle(fontSize: 11, color: Colors.grey)),
         ),
         for (final f in _coletas)
-          ListTile(
-            dense: true,
-            leading: const Icon(Icons.description_outlined),
-            title: Text(f.uri.pathSegments.last),
-            subtitle: Text('${(f.lengthSync() / 1024).toStringAsFixed(1)} kB'),
-            trailing: IconButton(
-              icon: const Icon(Icons.delete_outline),
-              onPressed: _emColeta ? null : () => _apagar(f),
-            ),
-          ),
+          ItemColeta(arquivo: f, bloqueado: _emColeta, aoApagar: _listarColetas),
       ],
     );
   }

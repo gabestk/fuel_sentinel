@@ -2,6 +2,7 @@
 // Rodar com:  flutter test test/obd_pids_test.dart
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:obdapp/functions/csv_leitor.dart';
 import 'package:obdapp/functions/csv_logger.dart';
 import 'package:obdapp/functions/obd_calculados.dart';
 import 'package:obdapp/functions/obd_pids.dart';
@@ -204,6 +205,41 @@ void main() {
     test('coluna Time no formato do OBDLink', () {
       expect(carimboObdlink(DateTime(2026, 9, 30, 13, 36, 32, 394, 400)), '09/30/2026 01:36:32.3944 PM');
       expect(carimboObdlink(DateTime(2026, 9, 30, 0, 5, 1, 7)), '09/30/2026 12:05:01.0070 AM');
+    });
+  });
+
+  group('Leitura de CSV', () {
+    test('lê o formato do OBDLink (BOM e cabeçalho com ", ")', () {
+      const texto = '\uFEFFTime, Engine RPM (RPM), Vehicle speed (km/h)\n'
+          '09/30/2026 01:36:32.3944 PM,0,0\n'
+          '09/30/2026 01:36:33.3160 PM,1847,18\n';
+      final t = lerCsv(texto);
+      expect(t.colunas, ['Time', 'Engine RPM (RPM)', 'Vehicle speed (km/h)']);
+      expect(t.nLinhas, 2);
+      expect(t.numero(1, 1), 1847);
+      expect(t.colunasNumericas(), [1, 2]);
+      final tempos = t.tempos();
+      expect(tempos.first, 0);
+      expect(tempos.last, closeTo(0.9216, 1e-6));
+    });
+
+    test('campos com aspas e vírgulas', () {
+      final t = lerCsv('a,b\n"x, y","z ""w"""\n');
+      expect(t.linhas.first, ['x, y', 'z "w"']);
+    });
+
+    test('hora do OBDLink com AM e PM', () {
+      expect(lerHoraObdlink('09/30/2026 12:05:01.0070 AM'), DateTime(2026, 9, 30, 0, 5, 1, 7));
+      expect(lerHoraObdlink('09/30/2026 01:36:32.3944 PM'), DateTime(2026, 9, 30, 13, 36, 32, 394, 400));
+    });
+
+    test('ida e volta: o que o app grava, o app lê', () {
+      final cab = linhaCsv(['Time', 'Vazão (g/s)', 'Elapsed time (sec)'], separador: ', ');
+      final lin = linhaCsv([carimboObdlink(DateTime(2026, 1, 1, 10)), '5.5', '2']);
+      final t = lerCsv('\uFEFF$cab\n$lin\n');
+      expect(t.colunas, ['Time', 'Vazão (g/s)', 'Elapsed time (sec)']);
+      expect(t.numero(0, 1), 5.5);
+      expect(t.tempos(), [2.0]);
     });
   });
 }

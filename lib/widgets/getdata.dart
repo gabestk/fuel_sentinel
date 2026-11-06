@@ -12,6 +12,7 @@ import '../dataBaseClass/confSimu.dart';
 import '../dataBaseClass/pidDiscoveryClass.dart';
 import '../functions/obdPlugin.dart';
 import '../route/autoroute.dart';
+import 'coletasSalvas.dart';
 
 const _verde = Color(0xFF008355);
 const _verdeClaro = Color(0xFF26B07F);
@@ -345,6 +346,15 @@ class _FloatState extends State<InitBluetooth> {
             ),
             const SizedBox(height: 6),
             Text(_modo(), style: const TextStyle(color: Colors.grey, fontSize: 12)),
+            const SizedBox(height: 4),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () => abrirColetas(context),
+                icon: const Icon(Icons.folder_open),
+                label: const Text('Coletas salvas (CSV)'),
+              ),
+            ),
             if (_conectando) ...[
               const SizedBox(height: 10),
               const Row(

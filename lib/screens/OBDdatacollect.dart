@@ -5,6 +5,7 @@ import '../functions/obdPlugin.dart';
 
 import 'package:obdapp/functions/InternalDatabase.dart';
 
+import '../widgets/coletasSalvas.dart';
 import '../widgets/dataConnect.dart';
 
 @RoutePage()
@@ -38,6 +39,13 @@ class obddata extends StatelessWidget {
             icon: const Icon(Icons.arrow_back),
             onPressed: () => _voltar(context),
           ),
+          actions: [
+            IconButton(
+              tooltip: 'Coletas salvas (CSV)',
+              icon: const Icon(Icons.folder_open),
+              onPressed: () => abrirColetas(context),
+            ),
+          ],
         ),
         body: SafeArea(
           child: Data_Connect(

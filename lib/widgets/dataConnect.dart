@@ -16,7 +16,9 @@ import '../dataBaseClass/confSimu.dart';
 import 'dart:convert';
 import '../dataBaseClass/pidDiscoveryClass.dart';
 import '../functions/obdPlugin.dart';
-import '../functions/csv_logger.dart' show carimboArquivo;
+import '../functions/csv_logger.dart';
+import '../functions/pastas.dart';
+import 'coletasSalvas.dart';
 import 'textWidget.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 import 'package:device_info_plus/device_info_plus.dart';
@@ -78,6 +80,46 @@ class DeviceService {
 }
 
 class _ConnectState extends State<Data_Connect> {
+  // CSV da coleta (mesmo formato do Scanner): uma linha por resposta do OBD
+  CsvLogger? _csv;
+  bool _criandoCsv = false;
+  List<String> _pidsCsv = [];
+
+  String _colunaCsv(ObdRawData r) {
+    final nome = r.obddata.title.isEmpty ? 'PID ${r.pid}' : r.obddata.title;
+    return r.obddata.unit.isEmpty ? '$nome (${r.pid})' : '$nome (${r.pid}) (${r.obddata.unit})';
+  }
+
+  /// Grava as leituras no CSV. O cabeçalho é montado na primeira resposta.
+  Future<void> _gravarCsv(List<ObdRawData> leituras) async {
+    if (leituras.isEmpty) return;
+    if (_csv == null) {
+      if (_criandoCsv) return;
+      _criandoCsv = true;
+      try {
+        _pidsCsv = [for (final r in leituras) r.pid];
+        _csv = await CsvLogger.criar(
+          await pastaColetas(),
+          'Abastecimento_${carimboArquivo(DateTime.now()).replaceAll('-', '')}.csv',
+          ['Time', for (final r in leituras) _colunaCsv(r), 'Latitude (deg)', 'Longitude (deg)'],
+        );
+      } catch (e) {
+        print('Não foi possível criar o CSV: $e');
+        return;
+      } finally {
+        _criandoCsv = false;
+      }
+    }
+    final porPid = {for (final r in leituras) r.pid: r.obddata.response.trim()};
+    final pos = _position;
+    _csv?.gravar([
+      carimboObdlink(DateTime.now()),
+      for (final p in _pidsCsv) porPid[p] ?? '',
+      pos == null ? '' : pos.latitude.toStringAsFixed(7),
+      pos == null ? '' : pos.longitude.toStringAsFixed(7),
+    ]);
+  }
+
   DeviceInfoPlugin deviceInfo = DeviceInfoPlugin();
   List data = [];
   double capacidadeTanqueRegistrada = 0;
@@ -365,6 +407,7 @@ class _ConnectState extends State<Data_Connect> {
         setState(() {
           _responses = responses1;
         });
+        _gravarCsv(responses1);
       }
       // sem envio remoto: não testa a internet a cada amostra (era lento)
       // bool a = await checkUserConnection();
@@ -429,6 +472,7 @@ class _ConnectState extends State<Data_Connect> {
         setState(() {
           _responses = responses1;
         });
+        _gravarCsv(responses1);
 
         for (var resp in _responses) {
           if (resp.pid == "01 2F" ||
@@ -770,6 +814,10 @@ count = 0;
   @override
   void dispose() async {
     super.dispose();
+    // fecha o CSV antes de qualquer outra coisa, para não perder dados
+    final csv = _csv;
+    _csv = null;
+    await csv?.fechar();
     for (final subscription in _streamSubscriptions) {
       subscription.cancel();
     }
