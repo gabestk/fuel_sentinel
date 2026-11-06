@@ -49,4 +49,24 @@ void main() {
     e.reiniciar();
     expect(e.quantidade, 0);
   });
+
+  test('a 1 Hz com valor constante estabiliza (caso do emulador)', () {
+    final e = EstabilizadorNivel();
+    var travou = -1;
+    for (var i = 0; i < 60; i++) {
+      e.adicionar(72.94117647058823, t(i));
+      if (travou < 0 && e.estavel) travou = i;
+    }
+    expect(travou, 15);
+    expect(e.duracao.inSeconds, lessThanOrEqualTo(30));
+  });
+
+  test('com intervalo longo (10 s) mantém leituras suficientes', () {
+    final e = EstabilizadorNivel();
+    for (var i = 0; i < 8; i++) {
+      e.adicionar(40, t(i * 10));
+    }
+    expect(e.quantidade, greaterThanOrEqualTo(6));
+    expect(e.estavel, isTrue);
+  });
 }

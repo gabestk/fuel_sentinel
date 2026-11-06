@@ -6,6 +6,8 @@
 // de um instante, e sim a mediana de uma janela de leituras com o carro parado,
 // aceita só quando a janela está estável:
 //  * pelo menos [minLeituras] leituras cobrindo pelo menos [minDuracao]
+//  * a janela guarda as leituras dos últimos [janelaMax] segundos (e nunca
+//    menos que [minLeituras]), para funcionar com qualquer intervalo de coleta
 //  * pouca dispersão: a diferença entre os percentis 20 e 80 da janela é no
 //    máximo [dispersaoMax] pontos percentuais (descarta picos isolados)
 //  * sem tendência: a mediana da primeira metade da janela e a da segunda
@@ -38,14 +40,14 @@ double percentil(List<double> valores, double p) {
 
 class EstabilizadorNivel {
   final int minLeituras;
-  final int maxLeituras;
+  final Duration janelaMax;
   final Duration minDuracao;
   final double dispersaoMax;
   final double tendenciaMax;
 
   EstabilizadorNivel({
     this.minLeituras = 6,
-    this.maxLeituras = 15,
+    this.janelaMax = const Duration(seconds: 30),
     this.minDuracao = const Duration(seconds: 15),
     this.dispersaoMax = 1.0,
     this.tendenciaMax = 0.5,
@@ -60,7 +62,8 @@ class EstabilizadorNivel {
   void adicionar(double valor, DateTime hora) {
     if (!valor.isFinite || valor < 0 || valor > 100) return;
     _janela.add(LeituraNivel(hora, valor));
-    while (_janela.length > maxLeituras) {
+    // descarta as mais antigas que [janelaMax], mantendo ao menos [minLeituras]
+    while (_janela.length > minLeituras && hora.difference(_janela.first.hora) > janelaMax) {
       _janela.removeAt(0);
     }
   }
