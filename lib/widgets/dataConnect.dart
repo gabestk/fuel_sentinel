@@ -20,6 +20,7 @@ import '../functions/csv_logger.dart';
 import '../functions/pastas.dart';
 import '../functions/elm327.dart';
 import '../functions/obd_pids.dart';
+import '../functions/nivel_estavel.dart';
 import 'textWidget.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 import 'package:device_info_plus/device_info_plus.dart';
@@ -32,6 +33,10 @@ import 'package:device_info_plus/device_info_plus.dart';
 import 'package:uuid/uuid.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+
+/// Etapas do abastecimento: o nível antes é travado quando estabiliza com o
+/// carro ligado e parado, e o depois é medido ao tocar em "Fim do abastecimento".
+enum EtapaAbastecimento { medindoAntes, abastecendo, medindoDepois, concluido }
 
 class Data_Connect extends StatefulWidget {
   /// Conexão com o adaptador, aberta na aba Abastecimento.
@@ -103,7 +108,7 @@ class _ConnectState extends State<Data_Connect> {
         _csv = await CsvLogger.criar(
           await pastaColetas(),
           'Abastecimento_${carimboArquivo(DateTime.now()).replaceAll('-', '')}.csv',
-          ['Time', for (final r in leituras) _colunaCsv(r), 'Latitude (deg)', 'Longitude (deg)'],
+          ['Time', for (final r in leituras) _colunaCsv(r), 'Latitude (deg)', 'Longitude (deg)', 'Evento'],
         );
       } catch (e) {
         print('Não foi possível criar o CSV: $e');
@@ -114,11 +119,16 @@ class _ConnectState extends State<Data_Connect> {
     }
     final porPid = {for (final r in leituras) r.pid: r.obddata.response.trim()};
     final pos = _position;
-    _csv?.gravar([
+    final csv = _csv;
+    if (csv == null) return;
+    final evento = _eventoCsv;
+    _eventoCsv = '';
+    csv.gravar([
       carimboObdlink(DateTime.now()),
       for (final p in _pidsCsv) porPid[p] ?? (_ehPidVin(p) ? vin.response : ''),
       pos == null ? '' : pos.latitude.toStringAsFixed(7),
       pos == null ? '' : pos.longitude.toStringAsFixed(7),
+      evento,
     ]);
   }
 
@@ -130,6 +140,21 @@ class _ConnectState extends State<Data_Connect> {
   List<double> ultimasMediasMoveis = [];
   double mediaMovel = 0.0;
   double mediaMovelAntes = 0.0;
+
+  // Fluxo do abastecimento (ver EtapaAbastecimento)
+  EtapaAbastecimento _etapa = EtapaAbastecimento.medindoAntes;
+  EstabilizadorNivel _estabAntes = EstabilizadorNivel();
+  EstabilizadorNivel _estabDepois = EstabilizadorNivel();
+  double? _nivelAntes;
+  double? _nivelDepois;
+  bool _antesEstavel = false;
+  bool _depoisEstavel = false;
+  DateTime? _horaAntes;
+  DateTime? _horaDepois;
+  DateTime? _inicioDepois;
+  bool _carroAndando = false;
+  String _eventoCsv = '';
+  static const Duration _tempoMaxDepois = Duration(minutes: 3);
   List<ObdRawData> _responses = [];
   List<Userdata> savejson = [];
   ObdData vin = ObdData(response: '', title: '', unit: '');
@@ -463,12 +488,22 @@ class _ConnectState extends State<Data_Connect> {
     setState(() {
       _responses = responses1;
     });
-    _gravarCsv(responses1);
+
+    // velocidade (01 0D), se estiver entre os PIDs: o nível só vale com o carro parado
+    double? velocidade;
+    for (final resp in responses1) {
+      if (resp.pid.replaceAll(' ', '') == '010D') {
+        velocidade = double.tryParse(resp.obddata.response.trim());
+      }
+    }
 
     for (var resp in _responses) {
       if (resp.pid == "01 2F" ||
           resp.obddata.title == "nivel de combustivel") {
-        double nivel = double.tryParse(resp.obddata.response) ?? 0.0;
+        // sem resposta (ex.: ignição desligada) não entra na média
+        final nivel = double.tryParse(resp.obddata.response.trim());
+        if (nivel == null) continue;
+        _alimentarFluxo(nivel, velocidade);
 
         if (ultimosNiveis.length >= 10) {
           ultimosNiveis.removeAt(0);
@@ -484,6 +519,8 @@ class _ConnectState extends State<Data_Connect> {
         ultimasMediasMoveis.add(mediaMovel);
       }
     }
+    if (mounted) setState(() {});
+    _gravarCsv(responses1);
 
     /*if (confdata!.acc) {
       accuser(acc.x, acc.y, acc.z, acc.unit);
@@ -931,8 +968,8 @@ count = 0;
 
     // Se a entrada foi por reais, calcula litros a partir do preço e do valor gasto
     if (!isByLiters) {
-      precoLitroReais = double.tryParse(precoController.text) ?? 0.0;
-      totalAbastecidoReais = double.tryParse(valorGastoController.text) ?? 0.0;
+      precoLitroReais = _numero(precoController.text) ?? 0.0;
+      totalAbastecidoReais = _numero(valorGastoController.text) ?? 0.0;
       if (precoLitroReais > 0 && totalAbastecidoReais > 0) {
         combustivelAbastecido = totalAbastecidoReais / precoLitroReais;
         // atualiza registro local também
@@ -941,139 +978,93 @@ count = 0;
     }
 
     if (capacidadeTanque <= 0 || combustivelAbastecido <= 0) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(
-        SnackBar(
-          content: Text(
-              "Registre a capacidade do tanque e o abastecimento primeiro!"),
-          duration: Duration(seconds: 1),
-        ),
-      );
+      _aviso("Registre a capacidade do tanque e o abastecimento primeiro!");
+      return;
+    }
+    final antes = _nivelAntes;
+    final depois = _nivelDepois;
+    if (antes == null || depois == null) {
+      _aviso(antes == null
+          ? 'Aguarde o nível antes ser travado (carro ligado e parado).'
+          : 'Toque em "Fim do abastecimento" e aguarde o nível depois.');
       return;
     }
 
-    double percentualAbastecido =
-        (combustivelAbastecido /
-                capacidadeTanque) *
-            100;
-
-    // Obtém o nível de combustível exibido pelo OBD
-    double nivelMedidoOBD = mediaMovel;
-
-    // Calcula o percentual esperado após abastecimento
-    double percentualEsperado =
-        mediaMovelAntes +
-            ((combustivelAbastecido /
-                    capacidadeTanque) *
-                100);
-
-    // Calcula a diferença absoluta
-    double diferenca = (nivelMedidoOBD -
-            percentualEsperado)
-        .abs();
-
-    // Define um limite de tolerância (exemplo: 2%)
-    double limiteTolerancia = 2.0;
-
-    // Verifica se há discrepância significativa
+    final percentualAbastecido = combustivelAbastecido / capacidadeTanque * 100;
+    final percentualEsperado = antes + percentualAbastecido;
+    final diferenca = (depois - percentualEsperado).abs();
+    final litrosObd = (depois - antes) / 100 * capacidadeTanque;
+    final consistente = diferenca <= _tolerancia;
 
     Position? posicaoAtual;
     try {
-      posicaoAtual = await Geolocator
-          .getCurrentPosition(
+      posicaoAtual = await Geolocator.getCurrentPosition(
         // ignore: deprecated_member_use
-        desiredAccuracy:
-            LocationAccuracy.high,
+        desiredAccuracy: LocationAccuracy.high,
       );
     } catch (e) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(
-        SnackBar(
-          content: Text(
-              "Erro ao obter localização: $e"),
-          duration: Duration(seconds: 1),
-        ),
-      );
-      return;
+      // sem GPS o abastecimento ainda é salvo, sem as coordenadas
     }
 
     String deviceId = await DeviceService.getDeviceId();
-    double latitude = posicaoAtual.latitude;
-    double longitude = posicaoAtual.longitude;
 
     String? imageHash;
-    if (_imageFile != null) {File imageFile = File(_imageFile!.path); imageHash = await generateImageHash(imageFile);
+    if (_imageFile != null) {
+      imageHash = await generateImageHash(File(_imageFile!.path));
     }
 
-    if (diferenca > limiteTolerancia) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(
-        SnackBar(
-          content: Text(
-            "🚨 Atenção: abastecimento não concluído, envie os dados novamente em alguns segundos",
-            style: TextStyle(
-                color: Colors.red),
-          ),
-          duration: Duration(seconds: 5),
-        ),
-      );
-      return;
-    } else {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(
-        SnackBar(
-          content: Text(
-            "✅ Medição consistente com abastecimento informado.",
-            style: TextStyle(
-                color: Colors.green),
-          ),
-          duration: Duration(seconds: 3),
-        ),
-      );
-      List<Map<String, dynamic>>
-          jsonData = savejson.map((data) {
-        var originalData = data.toJson();
-        originalData["timestamp"] = DateTime.now().toUtc().toIso8601String();
-        originalData["total_tanque_litros"] = capacidadeTanque.toStringAsFixed(2);
-        originalData["total_abastecido_litros"] = combustivelAbastecido.toStringAsFixed(2);
-        // Campos adicionais quando informado por reais
-        if (!isByLiters) {
-          originalData["preco_litro_reais"] = precoLitroReais.toStringAsFixed(2);
-          originalData["total_abastecido_reais"] = totalAbastecidoReais.toStringAsFixed(2);
-        }
-        originalData["percentual_abastecido"] = percentualAbastecido.toStringAsFixed(2);
-        originalData["latitude"] = latitude.toStringAsFixed(7);
-        originalData["longitude"] = longitude.toStringAsFixed(7);
-        originalData["imagem_hash"] = imageHash ?? "Sem imagem";
-        originalData["media_movel_nivel_combustivel_antes"] = mediaMovelAntes.toStringAsFixed(2);
-        originalData["media_movel_nivel_combustivel"] = mediaMovel.toStringAsFixed(2);
-        originalData["diferenca_percentual_detectada"] = (ultimosNiveis.length >= 10 ? diferenca : 0.0).toStringAsFixed(2);
-        originalData["device_id"] = deviceId;
-        return originalData;
-      }).toList();
-      if (jsonData.isNotEmpty) {
-        // Envio para a AWS desativado: salva só no celular
-        // await enviarListaJsonParaGateway(
-        //     jsonData);
+    String dataHora(DateTime? d) => d == null ? '' : d.toUtc().toIso8601String();
 
-        const JsonEncoder encoder =
-            JsonEncoder.withIndent(" ");
-        final String jsonString =
-            encoder.convert(jsonData);
-        await file
-            .writeAsString(jsonString);
-
-        ScaffoldMessenger.of(context)
-            .showSnackBar(
-          SnackBar(
-            content: Text(
-                "Dados salvos com sucesso!"),
-            duration:
-                Duration(seconds: 1),
-          ),
-        );
+    // A diferença também é salva: é ela que interessa na fiscalização
+    final List<Map<String, dynamic>> jsonData = savejson.map((data) {
+      var originalData = data.toJson();
+      originalData["timestamp"] = DateTime.now().toUtc().toIso8601String();
+      originalData["total_tanque_litros"] = capacidadeTanque.toStringAsFixed(2);
+      originalData["total_abastecido_litros"] = combustivelAbastecido.toStringAsFixed(2);
+      if (!isByLiters) {
+        originalData["preco_litro_reais"] = precoLitroReais.toStringAsFixed(2);
+        originalData["total_abastecido_reais"] = totalAbastecidoReais.toStringAsFixed(2);
       }
+      originalData["percentual_abastecido"] = percentualAbastecido.toStringAsFixed(2);
+      originalData["latitude"] = posicaoAtual?.latitude.toStringAsFixed(7) ?? '';
+      originalData["longitude"] = posicaoAtual?.longitude.toStringAsFixed(7) ?? '';
+      originalData["imagem_hash"] = imageHash ?? "Sem imagem";
+      // nomes antigos mantidos para quem já lê esses arquivos
+      originalData["media_movel_nivel_combustivel_antes"] = antes.toStringAsFixed(2);
+      originalData["media_movel_nivel_combustivel"] = depois.toStringAsFixed(2);
+      originalData["nivel_antes_percentual"] = antes.toStringAsFixed(2);
+      originalData["nivel_antes_estavel"] = _antesEstavel;
+      originalData["nivel_antes_hora"] = dataHora(_horaAntes);
+      originalData["nivel_depois_percentual"] = depois.toStringAsFixed(2);
+      originalData["nivel_depois_estavel"] = _depoisEstavel;
+      originalData["nivel_depois_hora"] = dataHora(_horaDepois);
+      originalData["nivel_esperado_percentual"] = percentualEsperado.toStringAsFixed(2);
+      originalData["litros_estimados_obd"] = litrosObd.toStringAsFixed(2);
+      originalData["diferenca_litros"] = (litrosObd - combustivelAbastecido).toStringAsFixed(2);
+      originalData["diferenca_percentual_detectada"] = diferenca.toStringAsFixed(2);
+      originalData["tolerancia_percentual"] = _tolerancia.toStringAsFixed(2);
+      originalData["consistente"] = consistente;
+      originalData["device_id"] = deviceId;
+      return originalData;
+    }).toList();
+
+    if (jsonData.isEmpty) {
+      _aviso('Ainda não há leituras do OBD para salvar.');
+      return;
     }
+    // Envio para a AWS desativado: salva só no celular
+    // await enviarListaJsonParaGateway(jsonData);
+    await file.writeAsString(const JsonEncoder.withIndent(" ").convert(jsonData));
+    _eventoCsv = 'Abastecimento salvo';
+
+    _aviso(
+      consistente
+          ? '✅ Medição consistente com o abastecimento informado. Dados salvos.'
+          : '🚨 Diferença de ${diferenca.toStringAsFixed(1)} p.p. '
+              '(${(litrosObd - combustivelAbastecido).toStringAsFixed(1)} L). Dados salvos.',
+      cor: consistente ? Colors.green : Colors.red,
+      segundos: 5,
+    );
   }
 
   // -------------------------------------------------------------------------
@@ -1094,6 +1085,96 @@ count = 0;
 
   double? _numero(String texto) => double.tryParse(texto.replaceAll(',', '.'));
 
+  // -------------------------------------------------------------------------
+  // Fluxo do abastecimento: nível antes → abastecer → nível depois
+  // -------------------------------------------------------------------------
+
+  /// Cada leitura válida do nível alimenta a etapa em andamento.
+  void _alimentarFluxo(double nivel, double? velocidade) {
+    final agora = DateTime.now();
+    final andando = (velocidade ?? 0) > 0;
+    _carroAndando = andando;
+    switch (_etapa) {
+      case EtapaAbastecimento.medindoAntes:
+        if (andando) {
+          _estabAntes.reiniciar();
+          return;
+        }
+        _estabAntes.adicionar(nivel, agora);
+        if (_estabAntes.estavel) _travarAntes(estavel: true);
+        break;
+      case EtapaAbastecimento.medindoDepois:
+        if (andando) {
+          _estabDepois.reiniciar();
+          return;
+        }
+        _estabDepois.adicionar(nivel, agora);
+        if (_estabDepois.estavel) {
+          _travarDepois(estavel: true);
+        } else if (_inicioDepois != null &&
+            agora.difference(_inicioDepois!) >= _tempoMaxDepois &&
+            _estabDepois.quantidade >= 3) {
+          _travarDepois(estavel: false);
+        }
+        break;
+      default:
+        break;
+    }
+  }
+
+  void _travarAntes({required bool estavel}) {
+    final v = _estabAntes.valor;
+    if (v.isNaN) return;
+    setState(() {
+      _nivelAntes = v;
+      mediaMovelAntes = v;
+      _antesEstavel = estavel;
+      _horaAntes = DateTime.now();
+      _etapa = EtapaAbastecimento.abastecendo;
+    });
+    _eventoCsv = 'Nivel antes ${v.toStringAsFixed(1)} %${estavel ? '' : ' (sem estabilizar)'}';
+    _aviso('Nível antes travado: ${v.toStringAsFixed(1)} %. Pode desligar o carro e abastecer.',
+        segundos: 4);
+  }
+
+  void _medirAntesDeNovo() {
+    setState(() {
+      _estabAntes = EstabilizadorNivel();
+      _nivelAntes = null;
+      _horaAntes = null;
+      _etapa = EtapaAbastecimento.medindoAntes;
+    });
+  }
+
+  void _fimDoAbastecimento() {
+    setState(() {
+      _estabDepois = EstabilizadorNivel();
+      _nivelDepois = null;
+      _horaDepois = null;
+      _inicioDepois = DateTime.now();
+      _etapa = EtapaAbastecimento.medindoDepois;
+    });
+    _eventoCsv = 'Fim do abastecimento';
+    _aviso('Ligue o carro e deixe parado: medindo o nível depois.', segundos: 3);
+  }
+
+  void _travarDepois({required bool estavel}) {
+    final v = _estabDepois.valor;
+    if (v.isNaN) return;
+    setState(() {
+      _nivelDepois = v;
+      _depoisEstavel = estavel;
+      _horaDepois = DateTime.now();
+      _etapa = EtapaAbastecimento.concluido;
+    });
+    _eventoCsv = 'Nivel depois ${v.toStringAsFixed(1)} %${estavel ? '' : ' (sem estabilizar)'}';
+    _aviso(
+        estavel
+            ? 'Nível depois travado: ${v.toStringAsFixed(1)} %.'
+            : 'O nível não estabilizou em ${_tempoMaxDepois.inMinutes} min. Usando ${v.toStringAsFixed(1)} %.',
+        segundos: 4);
+  }
+
   void _registrarTanque() {
     final v = _numero(tanqueController.text) ?? 0;
     setState(() => capacidadeTanqueRegistrada = v);
@@ -1106,10 +1187,7 @@ count = 0;
       _aviso('Informe a quantidade em litros');
       return;
     }
-    setState(() {
-      combustivelAbastecidoRegistrado = v;
-      mediaMovelAntes = mediaMovel;
-    });
+    setState(() => combustivelAbastecidoRegistrado = v);
     _aviso('Quantidade abastecida registrada!');
   }
 
@@ -1121,10 +1199,7 @@ count = 0;
       return;
     }
     final litros = gasto / preco;
-    setState(() {
-      combustivelAbastecidoRegistrado = litros;
-      mediaMovelAntes = mediaMovel;
-    });
+    setState(() => combustivelAbastecidoRegistrado = litros);
     _aviso('Equivalente a ${litros.toStringAsFixed(2)} L registrado.');
   }
 
@@ -1271,16 +1346,153 @@ count = 0;
     );
   }
 
+  String _hora(DateTime? d) => d == null
+      ? ''
+      : '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+
+  /// Um passo numerado do fluxo: círculo com o número (ou ✓), título e conteúdo.
+  Widget _passo(int n, String titulo, {required bool feito, required bool ativo, required List<Widget> filhos}) {
+    final cs = Theme.of(context).colorScheme;
+    final cor = feito ? _verde : (ativo ? cs.primary : Colors.grey);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CircleAvatar(
+            radius: 13,
+            backgroundColor: feito || ativo ? cor : cs.surfaceContainerHighest,
+            child: feito
+                ? const Icon(Icons.check, size: 16, color: Colors.white)
+                : Text('$n', style: TextStyle(fontSize: 13, color: ativo ? Colors.white : Colors.grey)),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(titulo,
+                    style: TextStyle(fontWeight: FontWeight.bold, color: feito || ativo ? null : Colors.grey)),
+                const SizedBox(height: 2),
+                ...filhos,
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _medindo(EstabilizadorNivel e, String instrucao, VoidCallback usarAtual) {
+    final atual = e.quantidade == 0 ? '—' : '${e.valor.toStringAsFixed(1)} %';
+    final aguardandoParar = e.progresso >= 1 && !e.estavel;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(instrucao, style: const TextStyle(fontSize: 13)),
+        const SizedBox(height: 6),
+        LinearProgressIndicator(value: e.quantidade == 0 ? null : e.progresso, color: _verde),
+        const SizedBox(height: 4),
+        Text(
+          _carroAndando
+              ? 'Carro em movimento: aguardando parar.'
+              : aguardandoParar
+                  ? 'Mediana $atual. Aguardando o nível parar de variar...'
+                  : 'Mediana $atual com ${e.quantidade} leituras.',
+          style: const TextStyle(color: Colors.grey, fontSize: 12),
+        ),
+        if (e.quantidade >= 3)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(onPressed: usarAtual, child: const Text('Usar valor atual')),
+          ),
+      ],
+    );
+  }
+
+  Widget _travado(double v, bool estavel, DateTime? hora, VoidCallback? deNovo) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            '${v.toStringAsFixed(1)} % às ${_hora(hora)}${estavel ? '' : ' (sem estabilizar)'}',
+            style: TextStyle(color: estavel ? _verde : Colors.orange, fontWeight: FontWeight.w600),
+          ),
+        ),
+        if (deNovo != null) TextButton(onPressed: deNovo, child: const Text('Medir de novo')),
+      ],
+    );
+  }
+
+  Widget _etapasFluxo() {
+    final e = _etapa;
+    return Column(
+      children: [
+        _passo(1, 'Nível antes',
+            feito: _nivelAntes != null,
+            ativo: e == EtapaAbastecimento.medindoAntes,
+            filhos: [
+              if (e == EtapaAbastecimento.medindoAntes)
+                _medindo(_estabAntes, 'Com o carro ligado e parado na bomba, aguarde o nível estabilizar.',
+                    () => _travarAntes(estavel: false))
+              else
+                _travado(_nivelAntes!, _antesEstavel, _horaAntes,
+                    e == EtapaAbastecimento.abastecendo ? _medirAntesDeNovo : null),
+            ]),
+        _passo(2, 'Abastecer',
+            feito: e == EtapaAbastecimento.medindoDepois || e == EtapaAbastecimento.concluido,
+            ativo: e == EtapaAbastecimento.abastecendo,
+            filhos: [
+              Text(
+                e == EtapaAbastecimento.medindoAntes
+                    ? 'Disponível depois de travar o nível antes.'
+                    : 'Pode desligar o carro e abastecer. Registre a quantidade abaixo.',
+                style: const TextStyle(fontSize: 13),
+              ),
+            ]),
+        _passo(3, 'Nível depois',
+            feito: _nivelDepois != null,
+            ativo: e == EtapaAbastecimento.abastecendo || e == EtapaAbastecimento.medindoDepois,
+            filhos: [
+              if (e == EtapaAbastecimento.medindoAntes)
+                const Text('Disponível depois de abastecer.', style: TextStyle(fontSize: 13))
+              else if (e == EtapaAbastecimento.abastecendo)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: FilledButton.icon(
+                    style: FilledButton.styleFrom(backgroundColor: _verde),
+                    onPressed: _fimDoAbastecimento,
+                    icon: const Icon(Icons.flag),
+                    label: const Text('Fim do abastecimento'),
+                  ),
+                )
+              else if (e == EtapaAbastecimento.medindoDepois)
+                _medindo(
+                    _estabDepois,
+                    'Ligue o carro e deixe parado. O nível pode levar alguns minutos para subir '
+                    '(máximo de ${_tempoMaxDepois.inMinutes} min).',
+                    () => _travarDepois(estavel: false))
+              else
+                _travado(_nivelDepois!, _depoisEstavel, _horaDepois, _fimDoAbastecimento),
+            ]),
+      ],
+    );
+  }
+
   Widget _verificacao() {
-    if (capacidadeTanqueRegistrada <= 0 || combustivelAbastecidoRegistrado <= 0) {
+    final antes = _nivelAntes;
+    final depois = _nivelDepois;
+    if (capacidadeTanqueRegistrada <= 0 || combustivelAbastecidoRegistrado <= 0 || antes == null || depois == null) {
       return const Text(
-        'Registre a capacidade do tanque e o abastecimento para conferir com o nível medido.',
+        'O resultado aparece aqui depois do nível antes, da quantidade abastecida, da capacidade '
+        'do tanque e do nível depois.',
         style: TextStyle(color: Colors.grey, fontSize: 12),
       );
     }
-    final esperado =
-        mediaMovelAntes + combustivelAbastecidoRegistrado / capacidadeTanqueRegistrada * 100;
-    final diferenca = (mediaMovel - esperado).abs();
+    final esperado = antes + combustivelAbastecidoRegistrado / capacidadeTanqueRegistrada * 100;
+    final diferenca = (depois - esperado).abs();
+    final litrosObd = (depois - antes) / 100 * capacidadeTanqueRegistrada;
+    final difLitros = litrosObd - combustivelAbastecidoRegistrado;
     final ok = diferenca <= _tolerancia;
     return Container(
       padding: const EdgeInsets.all(10),
@@ -1292,10 +1504,11 @@ count = 0;
       ),
       child: Column(
         children: [
-          _linha('Nível antes do abastecimento', '${mediaMovelAntes.toStringAsFixed(1)} %'),
-          _linha('Abastecido', '${combustivelAbastecidoRegistrado.toStringAsFixed(2)} L'),
+          _linha('Nível antes', '${antes.toStringAsFixed(1)} %'),
+          _linha('Nível depois', '${depois.toStringAsFixed(1)} %'),
           _linha('Nível esperado', '${esperado.toStringAsFixed(1)} %'),
-          _linha('Nível medido agora', '${mediaMovel.toStringAsFixed(1)} %'),
+          _linha('Abastecido (informado)', '${combustivelAbastecidoRegistrado.toStringAsFixed(2)} L'),
+          _linha('Estimado pelo OBD', '${litrosObd.toStringAsFixed(2)} L'),
           const Divider(),
           Row(
             children: [
@@ -1305,14 +1518,21 @@ count = 0;
               Expanded(
                 child: Text(
                   ok
-                      ? 'Consistente: diferença de ${diferenca.toStringAsFixed(1)} p.p.'
-                      : 'Diferença de ${diferenca.toStringAsFixed(1)} p.p. (limite ${_tolerancia.toStringAsFixed(0)} p.p.). '
-                          'Aguarde o nível estabilizar.',
+                      ? 'Consistente: diferença de ${diferenca.toStringAsFixed(1)} p.p. '
+                          '(${difLitros.toStringAsFixed(1)} L).'
+                      : 'Diferença de ${diferenca.toStringAsFixed(1)} p.p. (${difLitros.toStringAsFixed(1)} L), '
+                          'acima do limite de ${_tolerancia.toStringAsFixed(0)} p.p.',
                   style: TextStyle(color: ok ? _verde : Colors.red, fontWeight: FontWeight.w600),
                 ),
               ),
             ],
           ),
+          if (!_antesEstavel || !_depoisEstavel)
+            const Padding(
+              padding: EdgeInsets.only(top: 6),
+              child: Text('Atenção: um dos níveis foi travado sem estabilizar.',
+                  style: TextStyle(color: Colors.orange, fontSize: 12)),
+            ),
         ],
       ),
     );
@@ -1321,7 +1541,9 @@ count = 0;
   Widget _cartaoAbastecimento() {
     return _cartao('Abastecimento', Icons.water_drop_outlined, [
       _campo(tanqueController, 'Capacidade total do tanque (L)', _registrarTanque),
-      const SizedBox(height: 12),
+      const SizedBox(height: 8),
+      _etapasFluxo(),
+      const Divider(height: 20),
       SegmentedButton<bool>(
         segments: const [
           ButtonSegment(value: true, label: Text('Por litros'), icon: Icon(Icons.local_drink_outlined)),
