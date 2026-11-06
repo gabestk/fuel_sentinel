@@ -1,7 +1,7 @@
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
 
-import '../functions/obdPlugin.dart';
+import '../functions/elm327.dart';
 
 import 'package:obdapp/functions/InternalDatabase.dart';
 
@@ -10,10 +10,10 @@ import '../widgets/dataConnect.dart';
 
 @RoutePage()
 class obddata extends StatelessWidget {
-  final ObdPlugin obd2;
+  final Elm327 elm;
   final int value;
 
-  const obddata({super.key, required this.obd2, required this.value});
+  const obddata({super.key, required this.elm, required this.value});
 
   Future<void> _voltar(BuildContext context) async {
     var bancoInterno = InternalDatabase();
@@ -49,7 +49,7 @@ class obddata extends StatelessWidget {
         ),
         body: SafeArea(
           child: Data_Connect(
-            obd2: obd2,
+            elm: elm,
             value: value,
           ),
         ),

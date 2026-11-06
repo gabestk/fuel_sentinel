@@ -1,6 +1,6 @@
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
-import 'package:obdapp/functions/obdPlugin.dart';
+import 'package:obdapp/functions/elm327.dart';
 import 'package:obdapp/screens/pidsDiscovery.dart';
 import 'package:obdapp/screens/getAllPids.dart';
 

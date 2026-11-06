@@ -1,10 +1,12 @@
 // Mapa com o trajeto percorrido, usado no Abastecimento, no Scanner e na
 // visualização do CSV.
 //
-// Antes os blocos do mapa vinham do OpenStreetMap com a identificação do app de
-// exemplo do flutter_map, que o OpenStreetMap bloqueia: o mapa aparecia como um
-// aviso, só com o ponto. Agora os blocos vêm da CARTO (base do OpenStreetMap,
-// com versão clara e escura), com a identificação deste app e a atribuição exigida.
+// Os blocos do mapa vêm direto do OpenStreetMap, que não pede chave de API.
+// O OpenStreetMap só bloqueia apps sem identificação ou com a identificação de
+// exemplo do flutter_map, por isso o app se identifica como br.inmetro.fuelsentinel.
+// No modo escuro os mesmos blocos são escurecidos no próprio aparelho.
+// Sem internet os blocos não carregam, mas o trajeto continua desenhado sobre
+// um fundo liso.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -77,6 +79,7 @@ class _MapaTrajetoState extends State<MapaTrajeto> {
       options: MapOptions(
         initialCenter: pts.last,
         initialZoom: 16,
+        backgroundColor: escuro ? const Color(0xFF1E2227) : const Color(0xFFEDEFF2),
         maxZoom: 19,
         initialCameraFit: enquadrar
             ? CameraFit.bounds(bounds: limites, padding: const EdgeInsets.all(28))
@@ -88,12 +91,9 @@ class _MapaTrajetoState extends State<MapaTrajeto> {
       ),
       children: [
         TileLayer(
-          urlTemplate: escuro
-              ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-              : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-          subdomains: const ['a', 'b', 'c', 'd'],
-          retinaMode: RetinaMode.isHighDensity(context),
-          userAgentPackageName: 'com.example.obdapp',
+          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+          userAgentPackageName: 'br.inmetro.fuelsentinel',
+          tileBuilder: escuro ? darkModeTileBuilder : null,
           maxZoom: 19,
         ),
         PolylineLayer(polylines: [
@@ -106,8 +106,7 @@ class _MapaTrajetoState extends State<MapaTrajeto> {
         ]),
         RichAttributionWidget(
           attributions: [
-            TextSourceAttribution('OpenStreetMap'),
-            TextSourceAttribution('CARTO'),
+            TextSourceAttribution('OpenStreetMap contributors'),
           ],
         ),
       ],

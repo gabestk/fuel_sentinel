@@ -15,9 +15,11 @@ import '../dataBaseClass/confSimu.dart';
 // import 'package:aws_signature_v4/aws_signature_v4.dart'; // envio para a AWS desativado
 import 'dart:convert';
 import '../dataBaseClass/pidDiscoveryClass.dart';
-import '../functions/obdPlugin.dart';
+import 'package:math_expressions/math_expressions.dart' as mx;
 import '../functions/csv_logger.dart';
 import '../functions/pastas.dart';
+import '../functions/elm327.dart';
+import '../functions/obd_pids.dart';
 import 'textWidget.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 import 'package:device_info_plus/device_info_plus.dart';
@@ -32,14 +34,15 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 
 class Data_Connect extends StatefulWidget {
-  final ObdPlugin obd2;
+  /// Conexão com o adaptador, aberta na aba Abastecimento.
+  final Elm327 elm;
 
   final int value;
 
   Data_Connect({
     super.key,
     required this.value,
-    required this.obd2,
+    required this.elm,
   });
   static _ConnectState of(BuildContext context) =>
       context.findAncestorStateOfType()!;
@@ -443,93 +446,80 @@ class _ConnectState extends State<Data_Connect> {
   }
 
   void obdinfo() async {
-    if (!(await widget.obd2.isListenToDataInitialed)) {
-      widget.obd2.setOnDataReceived((command, response, requestCode) async {
-        if (confdata!.gps) {
-          getGps(pc);
-          updatemap;
-        }
+    // leitura pela comunicação nova (Elm327): cada PID espera a sua resposta
+    _lacoObd();
+  }
 
-        List resps = jsonDecode(response);
-        List<ObdRawData> responses1 = [];
-        ObdData vin2 = ObdData(unit: '', title: '', response: '');
-
-        if (resps.isNotEmpty) {
-          for (var reading in resps) {
-            {
-              ObdData help2 = ObdData(
-                  unit: reading['unit'],
-                  title: reading['title'],
-                  response: reading['response']);
-              ObdRawData help1 =
-                  ObdRawData(pid: reading['PID'], obddata: help2);
-
-              responses1.add(help1);
-            }
-          }
-        }
-        _registrarVin(responses1);
-        setState(() {
-          _responses = responses1;
-        });
-        _gravarCsv(responses1);
-
-        for (var resp in _responses) {
-          if (resp.pid == "01 2F" ||
-              resp.obddata.title == "nivel de combustivel") {
-            double nivel = double.tryParse(resp.obddata.response) ?? 0.0;
-
-            if (ultimosNiveis.length >= 10) {
-              ultimosNiveis.removeAt(0);
-            }
-            ultimosNiveis.add(nivel);
-            if (ultimosNiveis.isNotEmpty) {
-              mediaMovel =
-                  ultimosNiveis.reduce((a, b) => a + b) / ultimosNiveis.length;
-            }
-            if (ultimasMediasMoveis.length >= 10) {
-              ultimasMediasMoveis.removeAt(0);
-            }
-            ultimasMediasMoveis.add(mediaMovel);
-          }
-        }
-
-        /*if (confdata!.acc) {
-          accuser(acc.x, acc.y, acc.z, acc.unit);
-        }*/
-        // sem envio remoto: não testa a internet a cada amostra (era lento)
-        // bool a = await checkUserConnection();
-
-        UserDataProcess save = UserDataProcess(
-            processada: false,
-            isOnline: false,
-            signature: '',
-            userdata: _responses,
-            //acc: acc,
-            // pos: pc,
-            time: DateTime.now());
-        var signature = await sign(save).then((signature) => signature);
-        save.signature = signature.toString();
-        UserVehicleRaw vehicledata =
-            UserVehicleRaw(userdata: save, vin: confdata!.name);
-        if (vin.response != '') {
-          vehicledata = UserVehicleRaw(userdata: save, vin: vin.response);
-        }
-
-        Userdata tobesaved =
-            Userdata(name: uniqueid!, uservehicle: vehicledata);
-        savejson.add(tobesaved);
-        var userd = tobesaved.toJson();
-        data.add(userd);
-
-        if (save.isOnline) {
-          //Repository.add(tobesaved);
-          //bancoInterno.insertObdData(tobesaved);
-        } else {
-          //bancoInterno.insertObdData(tobesaved);
-        }
-      });
+  /// Trata um conjunto de leituras: GPS, VIN, tela, CSV, nível de combustível
+  /// e registro assinado. É o mesmo processamento de antes; só mudou a forma
+  /// de ler o adaptador.
+  Future<void> _processarRespostas(List<ObdRawData> responses1) async {
+    if (confdata!.gps) {
+      getGps(pc);
+      updatemap;
     }
+
+    _registrarVin(responses1);
+    setState(() {
+      _responses = responses1;
+    });
+    _gravarCsv(responses1);
+
+    for (var resp in _responses) {
+      if (resp.pid == "01 2F" ||
+          resp.obddata.title == "nivel de combustivel") {
+        double nivel = double.tryParse(resp.obddata.response) ?? 0.0;
+
+        if (ultimosNiveis.length >= 10) {
+          ultimosNiveis.removeAt(0);
+        }
+        ultimosNiveis.add(nivel);
+        if (ultimosNiveis.isNotEmpty) {
+          mediaMovel =
+              ultimosNiveis.reduce((a, b) => a + b) / ultimosNiveis.length;
+        }
+        if (ultimasMediasMoveis.length >= 10) {
+          ultimasMediasMoveis.removeAt(0);
+        }
+        ultimasMediasMoveis.add(mediaMovel);
+      }
+    }
+
+    /*if (confdata!.acc) {
+      accuser(acc.x, acc.y, acc.z, acc.unit);
+    }*/
+    // sem envio remoto: não testa a internet a cada amostra (era lento)
+    // bool a = await checkUserConnection();
+
+    UserDataProcess save = UserDataProcess(
+        processada: false,
+        isOnline: false,
+        signature: '',
+        userdata: _responses,
+        //acc: acc,
+        // pos: pc,
+        time: DateTime.now());
+    var signature = await sign(save).then((signature) => signature);
+    save.signature = signature.toString();
+    UserVehicleRaw vehicledata =
+        UserVehicleRaw(userdata: save, vin: confdata!.name);
+    if (vin.response != '') {
+      vehicledata = UserVehicleRaw(userdata: save, vin: vin.response);
+    }
+
+    Userdata tobesaved =
+        Userdata(name: uniqueid!, uservehicle: vehicledata);
+    savejson.add(tobesaved);
+    var userd = tobesaved.toJson();
+    data.add(userd);
+
+    if (save.isOnline) {
+      //Repository.add(tobesaved);
+      //bancoInterno.insertObdData(tobesaved);
+    } else {
+      //bancoInterno.insertObdData(tobesaved);
+    }
+  }
 
 /*
 
@@ -603,22 +593,6 @@ count = 0;
 
 */
 
-    senrequestOBDData();
-
-//setState(() {
-// _responses;
-//});
-  }
-
-  void checkpis(var ui) async {
-    String jsonString = json.encode([ui]);
-
-    if (widget.obd2.connection?.isConnected != false &&
-        widget.obd2.connection?.isConnected != null) {
-      await widget.obd2.getParamsFromJSON(jsonString);
-    }
-  }
-
   bool _ehPidVin(String pid) => pid.replaceAll(' ', '').startsWith('0902');
 
   /// Guarda o VIN lido: mostra na tela, usa nos registros e salva na configuração.
@@ -665,27 +639,95 @@ count = 0;
     ]);
   }
 
-  Future<void> senrequestOBDData() async {
-    final pidsJson = _pidsAtivosJson();
-    final quantidade = (json.decode(pidsJson) as List).length;
-    // O ObdPlugin espera 350 ms por PID. O intervalo entre pedidos nunca é menor
-    // que esse tempo, para um pedido não atropelar o anterior.
-    final intervaloConf = int.parse(confdata!.timereqobd) * 1000;
-    final temVin = (json.decode(pidsJson) as List).any((p) => _ehPidVin(p["PID"].toString()));
-    final intervaloMinimo = quantidade * 350 + (temVin ? 650 : 0) + 300;
-    final intervalo = Duration(milliseconds: max(intervaloConf, intervaloMinimo));
-    t2 = Timer.periodic(intervalo, (timer) async {
-      _timer = timer;
-      if (widget.obd2.connection?.isConnected == true) {
-        // o VIN não muda: depois de lido, deixa de ser pedido
-        final pedido = (json.decode(pidsJson) as List)
-            .where((p) => !(vin.response.isNotEmpty && _ehPidVin(p["PID"].toString())))
-            .toList();
-        if (pedido.isNotEmpty) {
-          await widget.obd2.getParamsFromJSON(json.encode(pedido));
-        }
+  bool _pararLeitura = false;
+  int _leiturasObd = 0;
+
+  /// Valor de um PID a partir da resposta bruta do adaptador. Usa a fórmula da
+  /// descrição do PID (ex.: "<int>, ( [0] * 100 ) / 255"), como antes. Se a
+  /// fórmula falhar, usa a fórmula padrão da norma SAE J1979 para o modo 01.
+  String _valorDoPid(Map p, String bruta) {
+    final pid = p["PID"].toString();
+    if (_ehPidVin(pid)) return decodificarVin(bruta);
+    if (respostaSemDados(bruta)) return '';
+    final partes = pid.trim().split(RegExp(r'\s+'));
+    if (partes.length < 2) return '';
+    final modo = int.tryParse(partes[0], radix: 16);
+    final codigo = int.tryParse(partes[1], radix: 16);
+    if (modo == null || codigo == null) return '';
+    // bytes de dados depois de "4X YY"
+    final prefixo = '${hex2(modo + 0x40)}${hex2(codigo)}';
+    List<int>? bytes;
+    for (final linha in linhasHex(bruta)) {
+      final k = linha.indexOf(prefixo);
+      if (k >= 0) {
+        final dados = linha.substring(k + prefixo.length);
+        bytes = [
+          for (var n = 0; n + 1 < dados.length; n += 2) int.parse(dados.substring(n, n + 2), radix: 16)
+        ];
+        break;
       }
-    });
+    }
+    if (bytes == null || bytes.isEmpty) return '';
+    final descricao = p["description"].toString();
+    if (descricao.contains(", ")) {
+      var formula = descricao.split(", ")[1];
+      for (var n = 0; n < bytes.length; n++) {
+        formula = formula.replaceAll("[$n]", bytes[n].toString());
+      }
+      try {
+        final v = mx.Parser().parse(formula).evaluate(mx.EvaluationType.REAL, mx.ContextModel());
+        if (v is num && v.isFinite) return v.toString();
+      } catch (_) {}
+    }
+    final padrao = modo == 1 ? tabelaPids[codigo] : null;
+    if (padrao != null && padrao.temFormula) {
+      final v = padrao.saidas.first.formula(bytes);
+      if (v != null) return v.toString();
+    }
+    return bytes.map(hex2).join(' ');
+  }
+
+  /// Lê os PIDs marcados sem parar, um de cada vez, esperando cada resposta
+  /// (comunicação nova, a mesma do Scanner). Um ciclo começa a cada intervalo
+  /// da configuração. Se os PIDs demorarem mais que o intervalo, o próximo
+  /// ciclo começa logo em seguida.
+  Future<void> _lacoObd() async {
+    final pedidos = (json.decode(_pidsAtivosJson()) as List).cast<Map>();
+    final intervalo = Duration(seconds: int.tryParse(confdata!.timereqobd) ?? 1);
+    final elm = widget.elm;
+    while (mounted && !_pararLeitura && elm.conectado) {
+      final inicio = DateTime.now();
+      final leituras = <ObdRawData>[];
+      for (final p in pedidos) {
+        if (_pararLeitura || !elm.conectado) break;
+        final pid = p["PID"].toString();
+        // o VIN não muda: depois de lido, não é pedido de novo
+        if (_ehPidVin(pid) && vin.response.isNotEmpty) {
+          leituras.add(ObdRawData(pid: pid, obddata: ObdData(unit: '', title: p["title"].toString(), response: vin.response)));
+          continue;
+        }
+        String bruta;
+        try {
+          bruta = await elm.enviar(pid.replaceAll(' ', ''),
+              timeout: Duration(seconds: _ehPidVin(pid) ? 5 : 2));
+        } catch (_) {
+          bruta = '';
+        }
+        _leiturasObd++;
+        leituras.add(ObdRawData(
+          pid: pid,
+          obddata: ObdData(
+            unit: p["unit"].toString(),
+            title: p["title"].toString(),
+            response: _valorDoPid(p, bruta),
+          ),
+        ));
+      }
+      if (!mounted || _pararLeitura) break;
+      if (leituras.isNotEmpty) await _processarRespostas(leituras);
+      final resta = intervalo - DateTime.now().difference(inicio);
+      if (resta > Duration.zero) await Future<void>.delayed(resta);
+    }
   }
 
   void getinfo() async {
@@ -846,9 +888,9 @@ count = 0;
       subscription.cancel();
     }
 
-    if (await widget.obd2.hasConnection) {
-      await widget.obd2.connection!.close();
-    }
+    // para o laço de leitura; a conexão continua aberta (é da aba Abastecimento),
+    // assim dá para fazer outra coleta sem conectar de novo
+    _pararLeitura = true;
 
     final diretorioUsuario = await path_prov.getExternalStorageDirectory();
 
@@ -868,9 +910,6 @@ count = 0;
       _timer!.cancel();
     }
 
-    await widget.obd2.connection?.close();
-    await widget.obd2.connection?.finish();
-    widget.obd2.connection?.dispose();
     t.cancel();
     t2.cancel();
   }
@@ -1138,7 +1177,7 @@ count = 0;
   }
 
   Widget _cartaoStatus() {
-    final conectado = widget.obd2.connection?.isConnected ?? false;
+    final conectado = widget.elm.conectado;
     return _cartao('Coleta', Icons.sensors, [
       _linha('Modo', _modo()),
       if (confdata?.obd == true && confdata?.on == false)

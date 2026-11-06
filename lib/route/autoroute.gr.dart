@@ -124,14 +124,14 @@ class Loadingpage extends PageRouteInfo<void> {
 class Obddata extends PageRouteInfo<ObddataArgs> {
   Obddata({
     Key? key,
-    required ObdPlugin obd2,
+    required Elm327 elm,
     required int value,
     List<PageRouteInfo>? children,
   }) : super(
           Obddata.name,
           args: ObddataArgs(
             key: key,
-            obd2: obd2,
+            elm: elm,
             value: value,
           ),
           initialChildren: children,
@@ -145,7 +145,7 @@ class Obddata extends PageRouteInfo<ObddataArgs> {
       final args = data.argsAs<ObddataArgs>();
       return obddata(
         key: args.key,
-        obd2: args.obd2,
+        elm: args.elm,
         value: args.value,
       );
     },
@@ -155,19 +155,19 @@ class Obddata extends PageRouteInfo<ObddataArgs> {
 class ObddataArgs {
   const ObddataArgs({
     this.key,
-    required this.obd2,
+    required this.elm,
     required this.value,
   });
 
   final Key? key;
 
-  final ObdPlugin obd2;
+  final Elm327 elm;
 
   final int value;
 
   @override
   String toString() {
-    return 'ObddataArgs{key: $key, obd2: $obd2, value: $value}';
+    return 'ObddataArgs{key: $key, elm: $elm, value: $value}';
   }
 }
 

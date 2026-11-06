@@ -10,7 +10,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../dataBaseClass/confSimu.dart';
 import '../dataBaseClass/pidDiscoveryClass.dart';
-import '../functions/obdPlugin.dart';
+import '../functions/elm327.dart';
 import '../route/autoroute.dart';
 import 'coletasSalvas.dart';
 
@@ -30,7 +30,7 @@ class _FloatState extends State<InitBluetooth> {
   Box? confapp;
   Confdata? confdata;
 
-  var obd2 = ObdPlugin();
+  final Elm327 _elm = Elm327();
   bool _conectando = false;
   bool _conectado = false;
   String? _adaptador;
@@ -42,13 +42,6 @@ class _FloatState extends State<InitBluetooth> {
 
   List<dynamic> getresponse = [];
 
-  void turnOBD_OFF() async {
-    obd2.connection?.close();
-    obd2.connection?.finish();
-    obd2.connection?.dispose();
-    obd2.disconnect();
-    obd2 = ObdPlugin();
-  }
 
   Future<void> init() async {
     pidDisc = await Hive.openBox<pidsDisc>('pidsDisc');
@@ -100,6 +93,7 @@ class _FloatState extends State<InitBluetooth> {
     length.dispose();
     title.dispose();
     description.dispose();
+    _elm.desconectar();
     super.dispose();
   }
 
@@ -260,12 +254,12 @@ class _FloatState extends State<InitBluetooth> {
       if (r.values.any((s) => s.isPermanentlyDenied)) await openAppSettings();
       return;
     }
-    if (!(await obd2.isBluetoothEnable)) {
-      await obd2.enableBluetooth;
+    final bt = FlutterBluetoothSerial.instance;
+    if (!((await bt.isEnabled) ?? false)) {
+      await bt.requestEnable();
     }
-    // cada coleta usa um ObdPlugin novo (ele só aceita registrar a escuta uma vez)
-    turnOBD_OFF();
-    final devices = await obd2.getPairedDevices;
+    if (_elm.conectado) await _elm.desconectar();
+    final devices = await bt.getBondedDevices();
     if (!mounted) return;
     if (devices.isEmpty) {
       showerror('Nenhum dispositivo pareado. Pareie o adaptador nas configurações do Android.');
@@ -297,13 +291,16 @@ class _FloatState extends State<InitBluetooth> {
       _conectando = true;
       _adaptador = escolhido.name ?? escolhido.address;
     });
-    await obd2.getConnection(escolhido, (connection) async {
+    try {
+      await _elm.conectar(escolhido.address);
+      await _elm.inicializar();
       if (!mounted) return;
       setState(() {
         _conectando = false;
-        _conectado = true;
+        _conectado = _elm.conectado;
       });
-    }, (message) {
+      if (!_conectado) showerror("Não foi possível conectar ao adaptador");
+    } catch (_) {
       if (mounted) {
         setState(() {
           _conectando = false;
@@ -311,16 +308,16 @@ class _FloatState extends State<InitBluetooth> {
         });
       }
       showerror("Não foi possível conectar ao adaptador");
-    });
+    }
   }
 
-  void desconectar() {
-    turnOBD_OFF();
-    setState(() => _conectado = false);
+  Future<void> desconectar() async {
+    await _elm.desconectar();
+    if (mounted) setState(() => _conectado = false);
   }
 
-  /// Passo 2: abre a coleta. Ao voltar, a conexão já foi encerrada pela
-  /// página da coleta, então é preciso conectar de novo para outra coleta.
+  /// Passo 2: abre a coleta. A conexão continua aberta ao voltar, então dá
+  /// para fazer outra coleta sem reconectar.
   Future<void> iniciar() async {
     await init();
     if (_qtdAtivos == 0) {
@@ -336,9 +333,9 @@ class _FloatState extends State<InitBluetooth> {
       return;
     }
     if (!mounted) return;
-    await context.router.push(Obddata(obd2: obd2, value: _indiceAtivo));
+    await context.router.push(Obddata(elm: _elm, value: _indiceAtivo));
     if (!mounted) return;
-    if (!_semAdaptador) desconectar();
+    setState(() => _conectado = _elm.conectado);
   }
 
   // -------------------------------------------------------------------------
