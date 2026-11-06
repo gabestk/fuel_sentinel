@@ -1280,20 +1280,24 @@ count = 0;
       const SizedBox(height: 12),
       _verificacao(),
       const SizedBox(height: 12),
-      Row(
-        children: [
-          OutlinedButton.icon(
-            onPressed: _tirarFoto,
-            icon: const Icon(Icons.add_a_photo_outlined),
-            label: Text(_imageFile == null ? 'Foto da bomba' : 'Trocar foto'),
-          ),
-          const SizedBox(width: 12),
-          if (_imageFile != null)
-            ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: Image.file(File(_imageFile!.path), height: 56, width: 56, fit: BoxFit.cover),
+      // foto da bomba, centralizada
+      Center(
+        child: Column(
+          children: [
+            if (_imageFile != null) ...[
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.file(File(_imageFile!.path), height: 120, fit: BoxFit.cover),
+              ),
+              const SizedBox(height: 8),
+            ],
+            OutlinedButton.icon(
+              onPressed: _tirarFoto,
+              icon: const Icon(Icons.add_a_photo_outlined),
+              label: Text(_imageFile == null ? 'Tirar foto da bomba' : 'Trocar foto'),
             ),
-        ],
+          ],
+        ),
       ),
       const SizedBox(height: 12),
       SizedBox(

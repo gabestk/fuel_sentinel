@@ -32,6 +32,8 @@ class _FloatState extends State<InitBluetooth> {
 
   var obd2 = ObdPlugin();
   bool _conectando = false;
+  bool _conectado = false;
+  String? _adaptador;
   var pid = TextEditingController(text: '');
   var length = TextEditingController(text: ''); // unidade
   var title = TextEditingController(text: '');
@@ -242,37 +244,28 @@ class _FloatState extends State<InitBluetooth> {
     return indexr;
   }
 
-  Future<void> iniciar() async {
-    await init();
-    if (_qtdAtivos == 0) {
-      showerror("Marque ao menos um PID");
-      return;
-    }
+  /// Simulação ou só GPS: a coleta não usa o adaptador.
+  bool get _semAdaptador {
     final c = confdata;
-    if (c == null) {
-      showerror("Configuração ainda carregando, tente de novo");
-      return;
-    }
-    if (!mounted) return;
-    // simulação ou só GPS: não precisa do adaptador
-    if (c.on || !c.obd) {
-      context.router.push(Obddata(obd2: obd2, value: _indiceAtivo));
-      return;
-    }
+    return c != null && (c.on || !c.obd);
+  }
+
+  bool get _pronto => _qtdAtivos > 0 && (_semAdaptador || _conectado);
+
+  /// Passo 1: escolhe o adaptador pareado e conecta.
+  Future<void> conectar() async {
     final r = await [Permission.bluetoothConnect, Permission.bluetoothScan].request();
     if (r.values.any((s) => s.isDenied || s.isPermanentlyDenied)) {
       showerror('Permita o acesso a "Dispositivos próximos" para usar o Bluetooth');
+      if (r.values.any((s) => s.isPermanentlyDenied)) await openAppSettings();
       return;
     }
     if (!(await obd2.isBluetoothEnable)) {
       await obd2.enableBluetooth;
     }
+    // cada coleta usa um ObdPlugin novo (ele só aceita registrar a escuta uma vez)
     turnOBD_OFF();
-    await showBluetoothList(obd2);
-  }
-
-  Future<void> showBluetoothList(ObdPlugin obd2plugin) async {
-    List<BluetoothDevice> devices = await obd2plugin.getPairedDevices;
+    final devices = await obd2.getPairedDevices;
     if (!mounted) return;
     if (devices.isEmpty) {
       showerror('Nenhum dispositivo pareado. Pareie o adaptador nas configurações do Android.');
@@ -300,15 +293,52 @@ class _FloatState extends State<InitBluetooth> {
     );
     if (escolhido == null) return;
 
-    setState(() => _conectando = true);
-    await obd2plugin.getConnection(escolhido, (connection) async {
+    setState(() {
+      _conectando = true;
+      _adaptador = escolhido.name ?? escolhido.address;
+    });
+    await obd2.getConnection(escolhido, (connection) async {
       if (!mounted) return;
-      setState(() => _conectando = false);
-      context.router.push(Obddata(obd2: obd2, value: _indiceAtivo));
+      setState(() {
+        _conectando = false;
+        _conectado = true;
+      });
     }, (message) {
-      if (mounted) setState(() => _conectando = false);
+      if (mounted) {
+        setState(() {
+          _conectando = false;
+          _conectado = false;
+        });
+      }
       showerror("Não foi possível conectar ao adaptador");
     });
+  }
+
+  void desconectar() {
+    turnOBD_OFF();
+    setState(() => _conectado = false);
+  }
+
+  /// Passo 2: abre a coleta. Ao voltar, a conexão já foi encerrada pela
+  /// página da coleta, então é preciso conectar de novo para outra coleta.
+  Future<void> iniciar() async {
+    await init();
+    if (_qtdAtivos == 0) {
+      showerror("Marque ao menos um PID");
+      return;
+    }
+    if (confdata == null) {
+      showerror("Configuração ainda carregando, tente de novo");
+      return;
+    }
+    if (!_semAdaptador && !_conectado) {
+      showerror("Conecte ao adaptador primeiro");
+      return;
+    }
+    if (!mounted) return;
+    await context.router.push(Obddata(obd2: obd2, value: _indiceAtivo));
+    if (!mounted) return;
+    if (!_semAdaptador) desconectar();
   }
 
   // -------------------------------------------------------------------------
@@ -322,49 +352,71 @@ class _FloatState extends State<InitBluetooth> {
     return 'Modo: OBD-II pelo Bluetooth';
   }
 
+  String _status() {
+    if (_semAdaptador) return 'Pronto para iniciar (não usa o adaptador neste modo)';
+    if (_conectando) return 'Conectando a ${_adaptador ?? 'adaptador'}...';
+    if (_conectado) return 'Conectado. Marque os PIDs e toque em "Iniciar coleta".';
+    return 'Conecte-se ao adaptador OBD-II';
+  }
+
   Widget _cabecalho() {
+    final ok = _conectado || _semAdaptador;
     return Card(
       margin: const EdgeInsets.fromLTRB(12, 12, 12, 6),
       child: Padding(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Row(
+            Row(
               children: [
-                Icon(Icons.local_gas_station, color: _verde),
-                SizedBox(width: 8),
-                Text('Conferência de abastecimento',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                Icon(
+                    _semAdaptador
+                        ? Icons.local_gas_station
+                        : (_conectado ? Icons.bluetooth_connected : Icons.bluetooth_disabled),
+                    color: ok ? _verde : Colors.grey),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _semAdaptador
+                        ? 'Conferência de abastecimento'
+                        : (_conectado ? (_adaptador ?? 'Adaptador') : 'Sem adaptador'),
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                ),
+                if (_conectando)
+                  const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
               ],
             ),
-            const SizedBox(height: 8),
-            const Text(
-              'Marque os PIDs que serão lidos e toque em "Iniciar". Durante a coleta, '
-              'informe o tanque e o quanto foi abastecido. O app compara com o nível '
-              'medido pelo OBD-II.',
-            ),
             const SizedBox(height: 6),
-            Text(_modo(), style: const TextStyle(color: Colors.grey, fontSize: 12)),
+            Text(_status()),
             const SizedBox(height: 4),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                onPressed: () => abrirColetas(context),
-                icon: const Icon(Icons.folder_open),
-                label: const Text('Coletas salvas (CSV)'),
-              ),
+            Text(_modo(), style: const TextStyle(color: Colors.grey, fontSize: 12)),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                if (!_semAdaptador && !_conectado)
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(backgroundColor: _verdeClaro),
+                    onPressed: _conectando ? null : conectar,
+                    icon: const Icon(Icons.bluetooth_searching),
+                    label: const Text('Conectar'),
+                  ),
+                if (!_semAdaptador && _conectado)
+                  OutlinedButton.icon(
+                    onPressed: desconectar,
+                    icon: const Icon(Icons.link_off),
+                    label: const Text('Desconectar'),
+                  ),
+                TextButton.icon(
+                  onPressed: () => abrirColetas(context),
+                  icon: const Icon(Icons.folder_open),
+                  label: const Text('Coletas salvas'),
+                ),
+              ],
             ),
-            if (_conectando) ...[
-              const SizedBox(height: 10),
-              const Row(
-                children: [
-                  SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
-                  SizedBox(width: 10),
-                  Text('Conectando ao adaptador...'),
-                ],
-              ),
-            ],
           ],
         ),
       ),
@@ -433,13 +485,16 @@ class _FloatState extends State<InitBluetooth> {
         ],
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
-      floatingActionButton: FloatingActionButton.extended(
-        heroTag: "btninit",
-        backgroundColor: _verdeClaro,
-        onPressed: _conectando ? null : iniciar,
-        icon: const Icon(Icons.play_arrow, color: Colors.white),
-        label: const Text('Iniciar', style: TextStyle(color: Colors.white)),
-      ),
+      // como no Scanner: o botão de iniciar só aparece depois de conectar
+      floatingActionButton: _pronto && !_conectando
+          ? FloatingActionButton.extended(
+              heroTag: "btninit",
+              backgroundColor: _verdeClaro,
+              onPressed: iniciar,
+              icon: const Icon(Icons.fiber_manual_record, color: Colors.white),
+              label: const Text('Iniciar coleta', style: TextStyle(color: Colors.white)),
+            )
+          : null,
     );
   }
 }
