@@ -147,6 +147,8 @@ class ObdPlugin {
       }
     } catch (e) {
       print(e);
+      connection = null;
+      onError(e.toString());
     }
   }
 

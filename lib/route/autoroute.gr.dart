@@ -208,3 +208,22 @@ class Ride extends PageRouteInfo<void> {
     },
   );
 }
+
+/// generated route for
+/// [scannerpage]
+class Scannerpage extends PageRouteInfo<void> {
+  const Scannerpage({List<PageRouteInfo>? children})
+      : super(
+          Scannerpage.name,
+          initialChildren: children,
+        );
+
+  static const String name = 'Scannerpage';
+
+  static PageInfo page = PageInfo(
+    name,
+    builder: (data) {
+      return const scannerpage();
+    },
+  );
+}

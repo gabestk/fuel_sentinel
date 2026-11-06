@@ -10,6 +10,7 @@ import '../screens/appMainPage.dart';
 import '../screens/configurePage.dart';
 import '../screens/riderObdUserPage.dart';
 import '../screens/historyRiderUserPage.dart';
+import '../screens/scannerPage.dart';
 
 part '../route/autoroute.gr.dart';
 
@@ -24,6 +25,7 @@ class AppRouter extends RootStackRouter {
         AutoRoute(path: '/initial', page: Appmain.page, children: [
          
           AutoRoute(path: 'ride', page: Ride.page),
+          AutoRoute(path: 'scanner', page: Scannerpage.page),
           AutoRoute(path: 'conf', page: Configurepage.page),
         ]),
         AutoRoute(

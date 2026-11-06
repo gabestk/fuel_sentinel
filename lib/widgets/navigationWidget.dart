@@ -41,6 +41,10 @@ class _BottonWidgetState extends State<BottonWidget> {
         //  label: 'Histórico',
         //),
         BottomNavigationBarItem(
+          icon: Icon(Icons.manage_search),
+          label: 'Scanner',
+        ),
+        BottomNavigationBarItem(
           icon: Icon(Icons.settings),
           label: 'Configuração',
         ),

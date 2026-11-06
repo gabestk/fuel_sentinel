@@ -35,7 +35,8 @@ Future<void> main() async {
   Hive.registerAdapter(VinAdapter());
   Hive.registerAdapter(pidsDiscAdapter());
   var bancoInterno = InternalDatabase();
-  bancoInterno.init();
+  // aguarda a configuração padrão ser criada na primeira execução
+  await bancoInterno.init();
   await Hive.openBox<Confdata>('conf');
   if (Platform.isAndroid) {
     var statusto = await Permission.storage.status;
@@ -50,6 +51,9 @@ Future<void> main() async {
       await Permission.bluetooth.request();
     }
 
+    // Android 12 ou superior: o Bluetooth exige a permissão "Dispositivos próximos"
+    await [Permission.bluetoothConnect, Permission.bluetoothScan].request();
+
     var statusloc = await Permission.location.status;
     if (!statusloc.isGranted) {
       // If not we will ask for permission first
@@ -59,7 +63,7 @@ Future<void> main() async {
   Workmanager().initialize(
       callbackDispatcher, // The top level function, aka callbackDispatcher
       isInDebugMode:
-          true // If enabled it will post a notification whenever the task is running. Handy for debugging tasks
+          false // true mostra uma notificação a cada execução da tarefa (só para depuração)
       );
   Workmanager().registerOneOffTask("task-identifier", "simpleTask");
 

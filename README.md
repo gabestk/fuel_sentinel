@@ -51,10 +51,81 @@ Este aplicativo é útil para desenvolvedores, pesquisadores e engenheiros que d
 - Gerenciamento de PIDs OBD, incluindo consultas de nível de combustível e VIN
 - Armazenamento local de dados utilizando Hive
 - Suporte a backend Firebase via `firebase_core` e `cloud_firestore`
+- Os dados são salvos só no celular (o envio para a AWS está desativado no código)
 - Sensoriamento de GPS e movimento utilizando `geolocator` e `sensors_plus`
 - Execução de tarefas em segundo plano via `workmanager`
 - Sistema modular de rotas com `auto_route`
 - Suporte para dados OBD simulados e intervalos de amostragem configuráveis
+
+---
+
+## Scanner de PIDs (coleta em CSV)
+
+A aba **Scanner** funciona como o aplicativo do OBDLink:
+
+1. **Conectar**: escolha o adaptador entre os dispositivos pareados. O app inicializa o ELM327
+   (`ATZ`, `ATE0`, `ATL0`, `ATS0`, `ATH0`, `ATAT1`, `ATSP0`) e mostra a versão e o protocolo.
+2. **Buscar PIDs**: consulta `0100`, `0120`, `0140`... e lista todos os PIDs do modo 01 que o
+   veículo informa como suportados. PIDs sem fórmula conhecida são gravados em hexadecimal.
+3. **Selecionar** os PIDs e os **calculados** (consumo instantâneo, Fuel Rate, CO2, distância e
+   combustível da viagem, potência, torque, aceleração...). A seleção fica salva.
+4. **Iniciar coleta**: o app lê os PIDs o mais rápido possível e grava uma linha por segundo
+   (ou 2, 5 ou 10 por segundo, no botão de ajustes), sempre com o último valor de cada PID,
+   como o OBDLink. PIDs lentos (temperaturas, nível, contadores) são lidos com menos frequência,
+   para os rápidos (rotação, velocidade, MAF) atualizarem mais.
+5. **Parar coleta**: fecha o arquivo e mostra onde ele foi salvo.
+
+### Formato do CSV
+
+Igual ao do OBDLink, para os mesmos scripts lerem os dois:
+
+- arquivo `CSVLog_AAAAMMDD_hhmmss.csv` em `Android/data/com.example.obdapp/files/coletas_obd/`
+  (acessível pelo cabo USB no computador)
+- BOM UTF-8, cabeçalho separado por `, `, linhas por `,`, ponto decimal
+- 1ª coluna `Time` no formato `09/30/2026 01:36:32.3944 PM`
+- colunas dos PIDs com os nomes e unidades do OBDLink (`Engine RPM (RPM)`,
+  `Intake manifold absolute pressure (bar)`, `Fuel/Air commanded equivalence ratio`...)
+- colunas dos calculados (`Fuel Rate (l/hr)`, `Instant Fuel Economy (l/100 km)`, `Trip Distance (km)`...)
+- GPS do celular: `Latitude (deg)`, `Longitude (deg)`, `Altitude (m)`, `GPS Speed (km/h)`, `GPS Accuracy (m)`
+- sensores do celular: `Accel X/Y/Z (m/s²)`, `Accel (Grav) X/Y/Z (m/s²)`, `Rotation Rate X/Y/Z (deg/s)`
+- `PID refresh rate (Hz)` (leituras de PID por segundo) e `Elapsed time (sec)`
+
+Diferenças em relação ao OBDLink: um PID que ainda não respondeu fica **vazio** (o OBDLink grava 0),
+o MAF calculado se chama `Mass air flow rate (calculated) (g/s)` (no OBDLink a coluna tem o mesmo
+nome do MAF medido) e os acumulados da viagem começam no início de cada coleta.
+
+### PIDs calculados
+
+As fórmulas foram ajustadas a um CSV real do OBDLink e reproduzem os valores dele
+(diferença relativa abaixo de 0,002 %):
+
+| Coluna | Fórmula |
+|---|---|
+| Fuel Rate (l/hr) | MAF × 3600 / (AFR × densidade) = MAF × 0,33279 (AFR 14,7, 0,7359 kg/L) |
+| CO2 flow (g/s) | Fuel Rate × 2347,7 g/L / 3600 |
+| Instant Fuel Economy (l/100 km) | Fuel Rate / velocidade × 100 |
+| Engine Power (PS) | MAF × 1,188916 |
+| Engine Torque (N•m) | Engine Power × 7219,6 / rpm |
+| Mass air flow rate (calculated) | rpm/120 × MAP × cilindrada × eficiência volumétrica × M_ar / (R × T) |
+| Trip Distance, Trip Fuel | integrais da velocidade e da Fuel Rate |
+| Fuel Remaining (l) | nível de combustível × capacidade do tanque |
+
+O OBDLink assume gasolina pura: não usa o teor de etanol nem as correções de combustível.
+AFR, densidade, preço, tanque, cilindrada e eficiência volumétrica podem ser alterados no
+botão de ajustes da aba.
+
+Opção **Leitura rápida**: envia o PID com o sufixo `1` (ex.: `010C1`), para o adaptador responder
+assim que a primeira ECU responder. Se aparecerem muitos valores vazios (alguns clones de ELM327
+não aceitam o sufixo), desligue a opção.
+
+Arquivos da funcionalidade:
+
+- `lib/functions/obd_pids.dart`: tabela de PIDs e interpretação das respostas
+- `lib/functions/obd_calculados.dart`: PIDs calculados
+- `lib/functions/elm327.dart`: comunicação com o adaptador, um comando por vez
+- `lib/functions/csv_logger.dart`: gravação do CSV linha a linha
+- `lib/widgets/pidScanner.dart` e `lib/screens/scannerPage.dart`: a página
+- `test/obd_pids_test.dart`: testes (`flutter test`)
 
 ---
 

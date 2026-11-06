@@ -14,7 +14,7 @@ class InternalDatabase {
   var insertEventInstance = InternalMath();
   late Box confapp;
 
-  void init() async {
+  Future<void> init() async {
     /*
     Hive.registerAdapter(UserdataAdapter());
     Hive.registerAdapter(UserVehicleRawAdapter());
@@ -29,7 +29,7 @@ class InternalDatabase {
    */
     confapp = await Hive.openBox<Confdata>('conf');
     if (confapp.length <= 0) {
-      newvalue();
+      await newvalue();
     }
   }
 
@@ -47,7 +47,7 @@ class InternalDatabase {
     }
   }
 
-  void newvalue() async {
+  Future<void> newvalue() async {
     var a = Confdata(
         rpmmin: 750,
         rpmmax: 10000,

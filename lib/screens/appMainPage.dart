@@ -24,7 +24,7 @@ class appmain extends StatelessWidget with ChangeNotifier {
               centerTitle: true,
               leading: const AutoLeadingButton(),
             ),
-            routes: const [Ride(), Configurepage()],
+            routes: const [Ride(), Scannerpage(), Configurepage()],
             bottomNavigationBuilder: (_, tabsRouter) {
               return BottonWidget(
                 tabsRouter: tabsRouter,

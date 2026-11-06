@@ -11,11 +11,12 @@ import 'package:obdapp/widgets/MapGps.dart';
 import 'package:obdapp/widgets/acc.dart';
 import 'package:crypto/crypto.dart';
 import '../dataBaseClass/confSimu.dart';
-import 'package:http/http.dart' as http;
-import 'package:aws_signature_v4/aws_signature_v4.dart';
+// import 'package:http/http.dart' as http; // envio para a AWS desativado
+// import 'package:aws_signature_v4/aws_signature_v4.dart'; // envio para a AWS desativado
 import 'dart:convert';
 import '../dataBaseClass/pidDiscoveryClass.dart';
 import '../functions/obdPlugin.dart';
+import '../functions/csv_logger.dart' show carimboArquivo;
 import 'textWidget.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 import 'package:device_info_plus/device_info_plus.dart';
@@ -365,7 +366,8 @@ class _ConnectState extends State<Data_Connect> {
           _responses = responses1;
         });
       }
-      bool a = await checkUserConnection();
+      // sem envio remoto: não testa a internet a cada amostra (era lento)
+      // bool a = await checkUserConnection();
 
       UserDataProcess save = UserDataProcess(
           processada: false,
@@ -424,7 +426,6 @@ class _ConnectState extends State<Data_Connect> {
             }
           }
         }
-        _responses.clear;
         setState(() {
           _responses = responses1;
         });
@@ -451,11 +452,12 @@ class _ConnectState extends State<Data_Connect> {
         /*if (confdata!.acc) {
           accuser(acc.x, acc.y, acc.z, acc.unit);
         }*/
-        bool a = await checkUserConnection();
+        // sem envio remoto: não testa a internet a cada amostra (era lento)
+        // bool a = await checkUserConnection();
 
         UserDataProcess save = UserDataProcess(
             processada: false,
-            isOnline: a,
+            isOnline: false,
             signature: '',
             userdata: _responses,
             //acc: acc,
@@ -586,7 +588,7 @@ count = 0;
           widget.obd2.connection?.isConnected != null) {
         await Future.delayed(
           Duration(
-            seconds: await widget.obd2.getParamsFromJSON('''
+            milliseconds: await widget.obd2.getParamsFromJSON('''
 [        
     
     {
@@ -621,7 +623,7 @@ if (widget.obd2.connection?.isConnected != false &&
     widget.obd2.connection?.isConnected != null) {
     await Future.delayed(
     Duration(
-        seconds: await widget.obd2.getParamsFromJSON('''
+        milliseconds: await widget.obd2.getParamsFromJSON('''
 [        
     
     {
@@ -648,13 +650,6 @@ print("terminou3");
   }
 
   void getinfo() async {
-    final diretorioUsuario = await path_prov.getApplicationDocumentsDirectory();
-
-    File file =
-        File(diretorioUsuario.path + "/" + DateTime.now().toString() + '.json');
-    String terre = "${diretorioUsuario.path}/${DateTime.now()}";
-    file.create();
-
     print(confdata!.obd);
 
     if (confdata!.obd) {
@@ -717,36 +712,37 @@ print("terminou3");
     pidDiskcong = pidDisc.getAt(widget.value);
   }
 
-Future<void> enviarListaJsonParaGateway(List<Map<String, dynamic>> jsonList) async {
-  final url = Uri.parse('https://n7trtk1sok.execute-api.us-east-1.amazonaws.com/saveTimestream');
-
-  const int tamanhoBloco = 100;
-
-  for (var i = 0; i < jsonList.length; i += tamanhoBloco) {
-    // pega o bloco de no máximo 100 itens
-    final bloco = jsonList.sublist(
-      i,
-      i + tamanhoBloco > jsonList.length ? jsonList.length : i + tamanhoBloco,
-    );
-
-    try {
-      final response = await http.post(
-        url,
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode(bloco),
-      );
-
-      if (response.statusCode == 200) {
-        print('Bloco ${i ~/ tamanhoBloco + 1} enviado com sucesso!');
-      } else {
-        print('Erro ao enviar bloco ${i ~/ tamanhoBloco + 1}: ${response.statusCode}');
-        print(response.body);
-      }
-    } catch (e) {
-      print('Erro ao conectar no bloco ${i ~/ tamanhoBloco + 1}: $e');
-    }
-  }
-}
+  // ---- Envio para a AWS desativado: por enquanto os dados ficam só no celular ----
+  // Future<void> enviarListaJsonParaGateway(List<Map<String, dynamic>> jsonList) async {
+  //   final url = Uri.parse('https://n7trtk1sok.execute-api.us-east-1.amazonaws.com/saveTimestream');
+  //
+  //   const int tamanhoBloco = 100;
+  //
+  //   for (var i = 0; i < jsonList.length; i += tamanhoBloco) {
+  //     // pega o bloco de no máximo 100 itens
+  //     final bloco = jsonList.sublist(
+  //       i,
+  //       i + tamanhoBloco > jsonList.length ? jsonList.length : i + tamanhoBloco,
+  //     );
+  //
+  //     try {
+  //       final response = await http.post(
+  //         url,
+  //         headers: {'Content-Type': 'application/json'},
+  //         body: json.encode(bloco),
+  //       );
+  //
+  //       if (response.statusCode == 200) {
+  //         print('Bloco ${i ~/ tamanhoBloco + 1} enviado com sucesso!');
+  //       } else {
+  //         print('Erro ao enviar bloco ${i ~/ tamanhoBloco + 1}: ${response.statusCode}');
+  //         print(response.body);
+  //       }
+  //     } catch (e) {
+  //       print('Erro ao conectar no bloco ${i ~/ tamanhoBloco + 1}: $e');
+  //     }
+  //   }
+  // }
 
   @override
   void initState() {
@@ -814,7 +810,7 @@ Future<void> enviarListaJsonParaGateway(List<Map<String, dynamic>> jsonList) asy
     final diretorioUsuario = await path_prov.getExternalStorageDirectory();
 
     File file = File(
-        diretorioUsuario!.path + "/" + DateTime.now().toString() + '.json');
+        diretorioUsuario!.path + "/" + carimboArquivo(DateTime.now()) + '.json');
 
     file.create();
     const JsonEncoder encoder = JsonEncoder();
@@ -1158,7 +1154,7 @@ Future<void> enviarListaJsonParaGateway(List<Map<String, dynamic>> jsonList) asy
                                               await path_prov
                                                   .getExternalStorageDirectory();
                                           File file = File(
-                                              "${diretorioUsuario!.path}/medicao_${DateTime.now()}.json");
+                                              "${diretorioUsuario!.path}/medicao_${carimboArquivo(DateTime.now())}.json");
                                           await file.create();
                                           double capacidadeTanque =
                                               capacidadeTanqueRegistrada;
@@ -1290,8 +1286,9 @@ Future<void> enviarListaJsonParaGateway(List<Map<String, dynamic>> jsonList) asy
                                               return originalData;
                                             }).toList();
                                             if (jsonData.isNotEmpty) {
-                                              await enviarListaJsonParaGateway(
-                                                  jsonData);
+                                              // Envio para a AWS desativado: salva só no celular
+                                              // await enviarListaJsonParaGateway(
+                                              //     jsonData);
 
                                               const JsonEncoder encoder =
                                                   JsonEncoder.withIndent(" ");
