@@ -1,0 +1,48 @@
+# Compila e testa o app a cada push, nos servidores do GitHub.
+# O resultado aparece na aba "Actions" do repositório.
+name: Testes do app
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  analisar-e-testar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter --version
+      - name: Instalar dependências
+        run: flutter pub get
+      - name: Análise do código (erros de compilação)
+        # só falha por erros; avisos e dicas de estilo não derrubam o teste
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+      - name: Testes (PIDs, calculados e CSV)
+        run: flutter test
+
+  gerar-apk:
+    needs: analisar-e-testar
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - name: Gerar APK de teste
+        run: flutter build apk --debug
+      - name: Disponibilizar o APK para download
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuel-sentinel-debug-apk
+          path: build/app/outputs/flutter-apk/app-debug.apk
