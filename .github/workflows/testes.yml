@@ -49,10 +49,13 @@ jobs:
 
   # APK de uso (release): menor e mais rápido que o de teste. É assinado com a
   # chave de depuração (como está no build.gradle), o que basta para instalar
-  # direto no celular.
+  # direto no celular. A cada push na branch test ele também é publicado na
+  # página Releases do repositório (release "teste"), com um link fixo.
   apk-release:
     needs: analisar-e-testar
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -71,3 +74,17 @@ jobs:
         with:
           name: fuel-sentinel-apk
           path: build/app/outputs/flutter-apk/app-release.apk
+      - name: Publicar em Releases (só na branch test)
+        if: github.ref == 'refs/heads/test' && github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          cp build/app/outputs/flutter-apk/app-release.apk fuel-sentinel.apk
+          NOTAS="APK gerado automaticamente a cada push na branch test. Último commit: ${GITHUB_SHA::7} em $(date -u '+%d/%m/%Y %H:%M') UTC."
+          if gh release view teste >/dev/null 2>&1; then
+            gh release edit teste --notes "$NOTAS"
+          else
+            gh release create teste --prerelease --target test --title "Fuel Sentinel (branch test)" --notes "$NOTAS"
+          fi
+          gh release upload teste fuel-sentinel.apk --clobber
