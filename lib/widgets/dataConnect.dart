@@ -1467,6 +1467,49 @@ count = 0;
     );
   }
 
+  /// Quantidade abastecida, em litros ou em reais (preço do litro e valor gasto).
+  Widget _camposQuantidade() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SegmentedButton<bool>(
+          segments: const [
+            ButtonSegment(value: true, label: Text('Por litros'), icon: Icon(Icons.local_drink_outlined)),
+            ButtonSegment(value: false, label: Text('Por reais'), icon: Icon(Icons.attach_money)),
+          ],
+          selected: {isByLiters},
+          onSelectionChanged: (s) => setState(() => isByLiters = s.first),
+        ),
+        const SizedBox(height: 8),
+        if (isByLiters)
+          _campo(abastecerController, 'Quantidade abastecida (L)', _registrarLitros)
+        else ...[
+          TextField(
+            controller: precoController,
+            decoration: const InputDecoration(
+                labelText: 'Preço do litro (R\$)', border: OutlineInputBorder(), isDense: true),
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          ),
+          const SizedBox(height: 8),
+          _campo(valorGastoController, 'Valor gasto (R\$)', _registrarReais),
+        ],
+        if (combustivelAbastecidoRegistrado > 0)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text('Registrado: ${combustivelAbastecidoRegistrado.toStringAsFixed(2)} L',
+                style: const TextStyle(color: _verde, fontWeight: FontWeight.w600)),
+          ),
+      ],
+    );
+  }
+
+  /// Tempo mínimo até o nível poder ser travado sozinho: 6 leituras e 15 s.
+  int get _segundosParaEstabilizar {
+    final intervalo = int.tryParse(confdata?.timereqobd ?? '') ?? 1;
+    final porLeituras = 5 * intervalo;
+    return porLeituras > 15 ? porLeituras : 15;
+  }
+
   Widget _etapasFluxo() {
     final e = _etapa;
     return Column(
@@ -1476,22 +1519,27 @@ count = 0;
             ativo: e == EtapaAbastecimento.medindoAntes,
             filhos: [
               if (e == EtapaAbastecimento.medindoAntes)
-                _medindo(_estabAntes, 'Com o carro ligado e parado na bomba, aguarde o nível estabilizar.',
+                _medindo(_estabAntes, 'Com o carro ligado e parado na bomba, aguarde o nível estabilizar '
+                    '(cerca de $_segundosParaEstabilizar s).',
                     () => _travarAntes(estavel: false))
               else
                 _travado(_nivelAntes!, _antesEstavel, _horaAntes,
                     e == EtapaAbastecimento.abastecendo ? _medirAntesDeNovo : null),
             ]),
         _passo(2, 'Abastecer',
-            feito: e == EtapaAbastecimento.medindoDepois || e == EtapaAbastecimento.concluido,
+            feito: combustivelAbastecidoRegistrado > 0 && e != EtapaAbastecimento.medindoAntes,
             ativo: e == EtapaAbastecimento.abastecendo,
             filhos: [
               Text(
                 e == EtapaAbastecimento.medindoAntes
                     ? 'Disponível depois de travar o nível antes.'
-                    : 'Pode desligar o carro e abastecer. Registre a quantidade abaixo.',
+                    : 'Pode desligar o carro e abastecer. Depois registre aqui quanto foi abastecido.',
                 style: const TextStyle(fontSize: 13),
               ),
+              if (e != EtapaAbastecimento.medindoAntes) ...[
+                const SizedBox(height: 8),
+                _camposQuantidade(),
+              ],
             ]),
         _passo(3, 'Nível depois',
             feito: _nivelDepois != null,
@@ -1587,28 +1635,6 @@ count = 0;
       const SizedBox(height: 8),
       _etapasFluxo(),
       const Divider(height: 20),
-      SegmentedButton<bool>(
-        segments: const [
-          ButtonSegment(value: true, label: Text('Por litros'), icon: Icon(Icons.local_drink_outlined)),
-          ButtonSegment(value: false, label: Text('Por reais'), icon: Icon(Icons.attach_money)),
-        ],
-        selected: {isByLiters},
-        onSelectionChanged: (s) => setState(() => isByLiters = s.first),
-      ),
-      const SizedBox(height: 12),
-      if (isByLiters)
-        _campo(abastecerController, 'Quantidade abastecida (L)', _registrarLitros)
-      else ...[
-        TextField(
-          controller: precoController,
-          decoration: const InputDecoration(
-              labelText: 'Preço do litro (R\$)', border: OutlineInputBorder(), isDense: true),
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-        ),
-        const SizedBox(height: 8),
-        _campo(valorGastoController, 'Valor gasto (R\$)', _registrarReais),
-      ],
-      const SizedBox(height: 12),
       _verificacao(),
       const SizedBox(height: 12),
       // foto da bomba, centralizada
