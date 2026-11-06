@@ -12,39 +12,38 @@ class obddata extends StatelessWidget {
   final ObdPlugin obd2;
   final int value;
 
-  const obddata({super.key, required this.obd2,  required this.value});
+  const obddata({super.key, required this.obd2, required this.value});
+
+  Future<void> _voltar(BuildContext context) async {
+    var bancoInterno = InternalDatabase();
+    await bancoInterno.handledata();
+    if (context.mounted) context.router.popUntilRoot();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _voltar(context);
+      },
       child: Scaffold(
-        floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-        floatingActionButton: Column(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            SizedBox(height: 10),
-            FloatingActionButton(
-              backgroundColor: (const Color(0xFF26B07F)),
-              heroTag: "btn1",
-              child: const Icon(
-                Icons.arrow_back,
-                color: Colors.white,
-              ),
-              onPressed: () async {
-                //Apploadingrouter()
-                var bancoInterno = InternalDatabase();
-                await bancoInterno.handledata().then((value) {
-                  context.router.popUntilRoot();
-                });
-
-                //
-              },
-            ),
-          ],
+        appBar: AppBar(
+          backgroundColor: const Color(0xFF008355),
+          foregroundColor: Colors.white,
+          title: const Text('Abastecimento'),
+          centerTitle: true,
+          leading: IconButton(
+            tooltip: 'Encerrar coleta',
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => _voltar(context),
+          ),
         ),
-        body: Data_Connect(
-          obd2: obd2,
-          value: value,
+        body: SafeArea(
+          child: Data_Connect(
+            obd2: obd2,
+            value: value,
+          ),
         ),
       ),
     );

@@ -18,7 +18,7 @@ class appmain extends StatelessWidget with ChangeNotifier {
               automaticallyImplyLeading: false,
               backgroundColor: const Color(0xFF008355),
               title: const Text(
-                'OBD APP',
+                'Fuel Sentinel',
                 style: TextStyle(color: Colors.white, fontSize: 20.0),
               ),
               centerTitle: true,

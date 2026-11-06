@@ -33,8 +33,8 @@ class _BottonWidgetState extends State<BottonWidget> {
       currentIndex: optionindex,
       items: const [
         BottomNavigationBarItem(
-          icon: Icon(Icons.home),
-          label: 'Corrida',
+          icon: Icon(Icons.local_gas_station),
+          label: 'Abastecimento',
         ),
        // BottomNavigationBarItem(
         //  icon: Icon(Icons.business),

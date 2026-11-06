@@ -431,7 +431,8 @@ class _ConnectState extends State<Data_Connect> {
         });
 
         for (var resp in _responses) {
-          if (resp.obddata.title == "nivel de combustivel") {
+          if (resp.pid == "01 2F" ||
+              resp.obddata.title == "nivel de combustivel") {
             double nivel = double.tryParse(resp.obddata.response) ?? 0.0;
 
             if (ultimosNiveis.length >= 10) {
@@ -574,79 +575,49 @@ count = 0;
     }
   }
 
-  Future<void> senrequestOBDData() async {
-    String pid1, title1, unit1, desc1;
-    pid1 = pidDiskcong.pid;
-    title1 = pidDiskcong.title;
-    unit1 = pidDiskcong.unit;
-    desc1 = pidDiskcong.description;
-    var oneSec = Duration(seconds: int.parse(confdata!.timereqobd));
-    t2 = Timer.periodic(Duration(seconds: int.parse(confdata!.timereqobd)),
-        (timer) async {
-      _timer = timer;
-      if (widget.obd2.connection?.isConnected != false &&
-          widget.obd2.connection?.isConnected != null) {
-        await Future.delayed(
-          Duration(
-            milliseconds: await widget.obd2.getParamsFromJSON('''
-[        
-    
-    {
+  /// PIDs pedidos ao veículo: os marcados na aba Abastecimento. Sem nenhum
+  /// marcado, usa o nível de combustível e o VIN, como antes.
+  String _pidsAtivosJson() {
+    final ativos = pidDisc.values
+        .whereType<pidsDisc>()
+        .where((p) => p.ativo)
+        .map((p) => p.toJson())
+        .toList();
+    if (ativos.isNotEmpty) return json.encode(ativos);
+    return json.encode([
+      {
         "PID": "01 2F",
         "length": 1,
         "title": "nivel de combustivel",
         "unit": "%",
         "description": "<int>, ( [0] * 100 ) / 255",
         "status": true
-    },
-    {
+      },
+      {
         "PID": "09 02",
         "length": 1,
         "title": "VIN",
         "unit": "",
         "description": "<string>, número de identificação do veículo",
         "status": true
-    }
-]
-'''),
-          ),
-        );
+      }
+    ]);
+  }
+
+  Future<void> senrequestOBDData() async {
+    final pidsJson = _pidsAtivosJson();
+    final quantidade = (json.decode(pidsJson) as List).length;
+    // O ObdPlugin espera 350 ms por PID. O intervalo entre pedidos nunca é menor
+    // que esse tempo, para um pedido não atropelar o anterior.
+    final intervaloConf = int.parse(confdata!.timereqobd) * 1000;
+    final intervaloMinimo = quantidade * 350 + 300;
+    final intervalo = Duration(milliseconds: max(intervaloConf, intervaloMinimo));
+    t2 = Timer.periodic(intervalo, (timer) async {
+      _timer = timer;
+      if (widget.obd2.connection?.isConnected == true) {
+        await widget.obd2.getParamsFromJSON(pidsJson);
       }
     });
-
-/*
-Timer.periodic(
-Duration(seconds: int.parse(confdata!.timereqobd)),
-(timer) async {
-_timer = timer;
-if (widget.obd2.connection?.isConnected != false &&
-    widget.obd2.connection?.isConnected != null) {
-    await Future.delayed(
-    Duration(
-        milliseconds: await widget.obd2.getParamsFromJSON('''
-[        
-    
-    {
-        "PID": "01 2F",
-        "length": 1,
-        "title": "nivel de combustivel",
-        "unit": "%",
-        "description": "<int>, ( [0] * 100 ) / 255",
-        "status": true
-    }
-]
-'''),
-    ),
-    );
-} else {
-    print("oi");
-    timer.cancel();
-}
-
-print("terminou3");
-},
-);
-*/
   }
 
   void getinfo() async {
@@ -832,495 +803,480 @@ print("terminou3");
     t2.cancel();
   }
 
+  /// Confere o abastecimento com o nível medido e salva os dados no celular.
+  Future<void> _salvarAbastecimento() async {
+    final diretorioUsuario =
+        await path_prov
+            .getExternalStorageDirectory();
+    File file = File(
+        "${diretorioUsuario!.path}/medicao_${carimboArquivo(DateTime.now())}.json");
+    // o arquivo só é criado ao gravar, para não deixar arquivos vazios
+    double capacidadeTanque =
+        capacidadeTanqueRegistrada;
+    double combustivelAbastecido =
+        combustivelAbastecidoRegistrado;
+    double precoLitroReais = 0.0;
+    double totalAbastecidoReais = 0.0;
+
+    // Se a entrada foi por reais, calcula litros a partir do preço e do valor gasto
+    if (!isByLiters) {
+      precoLitroReais = double.tryParse(precoController.text) ?? 0.0;
+      totalAbastecidoReais = double.tryParse(valorGastoController.text) ?? 0.0;
+      if (precoLitroReais > 0 && totalAbastecidoReais > 0) {
+        combustivelAbastecido = totalAbastecidoReais / precoLitroReais;
+        // atualiza registro local também
+        combustivelAbastecidoRegistrado = combustivelAbastecido;
+      }
+    }
+
+    if (capacidadeTanque <= 0 || combustivelAbastecido <= 0) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(
+        SnackBar(
+          content: Text(
+              "Registre a capacidade do tanque e o abastecimento primeiro!"),
+          duration: Duration(seconds: 1),
+        ),
+      );
+      return;
+    }
+
+    double percentualAbastecido =
+        (combustivelAbastecido /
+                capacidadeTanque) *
+            100;
+
+    // Obtém o nível de combustível exibido pelo OBD
+    double nivelMedidoOBD = mediaMovel;
+
+    // Calcula o percentual esperado após abastecimento
+    double percentualEsperado =
+        mediaMovelAntes +
+            ((combustivelAbastecido /
+                    capacidadeTanque) *
+                100);
+
+    // Calcula a diferença absoluta
+    double diferenca = (nivelMedidoOBD -
+            percentualEsperado)
+        .abs();
+
+    // Define um limite de tolerância (exemplo: 2%)
+    double limiteTolerancia = 2.0;
+
+    // Verifica se há discrepância significativa
+
+    Position? posicaoAtual;
+    try {
+      posicaoAtual = await Geolocator
+          .getCurrentPosition(
+        // ignore: deprecated_member_use
+        desiredAccuracy:
+            LocationAccuracy.high,
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(
+        SnackBar(
+          content: Text(
+              "Erro ao obter localização: $e"),
+          duration: Duration(seconds: 1),
+        ),
+      );
+      return;
+    }
+
+    String deviceId = await DeviceService.getDeviceId();
+    double latitude = posicaoAtual.latitude;
+    double longitude = posicaoAtual.longitude;
+
+    String? imageHash;
+    if (_imageFile != null) {File imageFile = File(_imageFile!.path); imageHash = await generateImageHash(imageFile);
+    }
+
+    if (diferenca > limiteTolerancia) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(
+        SnackBar(
+          content: Text(
+            "🚨 Atenção: abastecimento não concluído, envie os dados novamente em alguns segundos",
+            style: TextStyle(
+                color: Colors.red),
+          ),
+          duration: Duration(seconds: 5),
+        ),
+      );
+      return;
+    } else {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(
+        SnackBar(
+          content: Text(
+            "✅ Medição consistente com abastecimento informado.",
+            style: TextStyle(
+                color: Colors.green),
+          ),
+          duration: Duration(seconds: 3),
+        ),
+      );
+      List<Map<String, dynamic>>
+          jsonData = savejson.map((data) {
+        var originalData = data.toJson();
+        originalData["timestamp"] = DateTime.now().toUtc().toIso8601String();
+        originalData["total_tanque_litros"] = capacidadeTanque.toStringAsFixed(2);
+        originalData["total_abastecido_litros"] = combustivelAbastecido.toStringAsFixed(2);
+        // Campos adicionais quando informado por reais
+        if (!isByLiters) {
+          originalData["preco_litro_reais"] = precoLitroReais.toStringAsFixed(2);
+          originalData["total_abastecido_reais"] = totalAbastecidoReais.toStringAsFixed(2);
+        }
+        originalData["percentual_abastecido"] = percentualAbastecido.toStringAsFixed(2);
+        originalData["latitude"] = latitude.toStringAsFixed(7);
+        originalData["longitude"] = longitude.toStringAsFixed(7);
+        originalData["imagem_hash"] = imageHash ?? "Sem imagem";
+        originalData["media_movel_nivel_combustivel_antes"] = mediaMovelAntes.toStringAsFixed(2);
+        originalData["media_movel_nivel_combustivel"] = mediaMovel.toStringAsFixed(2);
+        originalData["diferenca_percentual_detectada"] = (ultimosNiveis.length >= 10 ? diferenca : 0.0).toStringAsFixed(2);
+        originalData["device_id"] = deviceId;
+        return originalData;
+      }).toList();
+      if (jsonData.isNotEmpty) {
+        // Envio para a AWS desativado: salva só no celular
+        // await enviarListaJsonParaGateway(
+        //     jsonData);
+
+        const JsonEncoder encoder =
+            JsonEncoder.withIndent(" ");
+        final String jsonString =
+            encoder.convert(jsonData);
+        await file
+            .writeAsString(jsonString);
+
+        ScaffoldMessenger.of(context)
+            .showSnackBar(
+          SnackBar(
+            content: Text(
+                "Dados salvos com sucesso!"),
+            duration:
+                Duration(seconds: 1),
+          ),
+        );
+      }
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Registro do tanque e do abastecimento
+  // -------------------------------------------------------------------------
+  static const _verde = Color(0xFF008355);
+  static const double _tolerancia = 2.0; // pontos percentuais
+
+  void _aviso(String texto, {Color? cor, int segundos = 2}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        content: Text(texto, style: cor == null ? null : TextStyle(color: cor)),
+        duration: Duration(seconds: segundos),
+      ));
+  }
+
+  double? _numero(String texto) => double.tryParse(texto.replaceAll(',', '.'));
+
+  void _registrarTanque() {
+    final v = _numero(tanqueController.text) ?? 0;
+    setState(() => capacidadeTanqueRegistrada = v);
+    _aviso(v > 0 ? 'Capacidade do tanque registrada!' : 'Informe uma capacidade válida');
+  }
+
+  void _registrarLitros() {
+    final v = _numero(abastecerController.text) ?? 0;
+    if (v <= 0) {
+      _aviso('Informe a quantidade em litros');
+      return;
+    }
+    setState(() {
+      combustivelAbastecidoRegistrado = v;
+      mediaMovelAntes = mediaMovel;
+    });
+    _aviso('Quantidade abastecida registrada!');
+  }
+
+  void _registrarReais() {
+    final preco = _numero(precoController.text) ?? 0;
+    final gasto = _numero(valorGastoController.text) ?? 0;
+    if (preco <= 0 || gasto <= 0) {
+      _aviso('Informe preço e valor gasto válidos');
+      return;
+    }
+    final litros = gasto / preco;
+    setState(() {
+      combustivelAbastecidoRegistrado = litros;
+      mediaMovelAntes = mediaMovel;
+    });
+    _aviso('Equivalente a ${litros.toStringAsFixed(2)} L registrado.');
+  }
+
+  // -------------------------------------------------------------------------
+  // Interface
+  // -------------------------------------------------------------------------
+  Widget _cartao(String titulo, IconData icone, List<Widget> filhos) {
+    return Card(
+      margin: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icone, color: _verde, size: 20),
+                const SizedBox(width: 8),
+                Text(titulo, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+              ],
+            ),
+            const SizedBox(height: 10),
+            ...filhos,
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _linha(String rotulo, String valor, {bool destaque = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          Expanded(child: Text(rotulo, style: const TextStyle(color: Colors.black87))),
+          Text(valor,
+              style: TextStyle(
+                  fontWeight: FontWeight.bold, color: destaque ? _verde : Colors.black87)),
+        ],
+      ),
+    );
+  }
+
+  String _modo() {
+    final c = confdata;
+    if (c == null) return 'Carregando...';
+    if (!c.obd) return 'Só GPS (OBD desligado nas configurações)';
+    if (c.on) return 'Simulação (dados gerados pelo app)';
+    return 'OBD-II';
+  }
+
+  Widget _cartaoStatus() {
+    final conectado = widget.obd2.connection?.isConnected ?? false;
+    return _cartao('Coleta', Icons.sensors, [
+      _linha('Modo', _modo()),
+      if (confdata?.obd == true && confdata?.on == false)
+        _linha('Adaptador', conectado ? 'conectado' : 'desconectado', destaque: conectado),
+      _linha('Leituras registradas', '${data.length}'),
+      if (vin.response.isNotEmpty) _linha('VIN', vin.response),
+    ]);
+  }
+
+  Widget _cartaoNivel() {
+    final atual = ultimosNiveis.isNotEmpty ? ultimosNiveis.last : null;
+    final litros = capacidadeTanqueRegistrada > 0 ? mediaMovel / 100 * capacidadeTanqueRegistrada : null;
+    return _cartao('Nível de combustível', Icons.local_gas_station, [
+      Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Text(atual == null ? '—' : atual.toStringAsFixed(1),
+              style: const TextStyle(fontSize: 40, fontWeight: FontWeight.bold, color: _verde)),
+          const Padding(
+            padding: EdgeInsets.only(left: 4, bottom: 8),
+            child: Text('%', style: TextStyle(fontSize: 18)),
+          ),
+          const Spacer(),
+          if (litros != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text('≈ ${litros.toStringAsFixed(1)} L no tanque'),
+            ),
+        ],
+      ),
+      const SizedBox(height: 6),
+      ClipRRect(
+        borderRadius: BorderRadius.circular(6),
+        child: LinearProgressIndicator(
+          value: (mediaMovel / 100).clamp(0.0, 1.0),
+          minHeight: 10,
+          color: _verde,
+          backgroundColor: const Color(0xFFE3EFE9),
+        ),
+      ),
+      const SizedBox(height: 6),
+      Text(
+        atual == null
+            ? 'Aguardando a primeira leitura do nível...'
+            : 'Média móvel das últimas ${ultimosNiveis.length} leituras: ${mediaMovel.toStringAsFixed(1)} %',
+        style: const TextStyle(color: Colors.grey, fontSize: 12),
+      ),
+    ]);
+  }
+
+  Widget _cartaoLeituras() {
+    return _cartao('Leituras do OBD', Icons.list_alt, [
+      if (_responses.isEmpty)
+        const Text('Nenhuma leitura ainda', style: TextStyle(color: Colors.grey))
+      else
+        for (final r in _responses)
+          _linha(
+            r.obddata.title.isEmpty ? 'PID ${r.pid}' : r.obddata.title,
+            r.obddata.response.isEmpty ? '—' : '${r.obddata.response} ${r.obddata.unit}'.trim(),
+          ),
+    ]);
+  }
+
+  Widget _cartaoGps() {
+    return _cartao('Trajeto (GPS)', Icons.map_outlined, [
+      ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: SizedBox(height: 200, child: MapWidget(points: points)),
+      ),
+    ]);
+  }
+
+  Widget _campo(TextEditingController c, String rotulo, VoidCallback aoConfirmar) {
+    return Row(
+      children: [
+        Expanded(
+          child: TextField(
+            controller: c,
+            decoration: InputDecoration(labelText: rotulo, border: const OutlineInputBorder(), isDense: true),
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            onSubmitted: (_) => aoConfirmar(),
+          ),
+        ),
+        const SizedBox(width: 8),
+        IconButton.filled(
+          style: IconButton.styleFrom(backgroundColor: _verde),
+          onPressed: aoConfirmar,
+          icon: const Icon(Icons.check, color: Colors.white),
+        ),
+      ],
+    );
+  }
+
+  Widget _verificacao() {
+    if (capacidadeTanqueRegistrada <= 0 || combustivelAbastecidoRegistrado <= 0) {
+      return const Text(
+        'Registre a capacidade do tanque e o abastecimento para conferir com o nível medido.',
+        style: TextStyle(color: Colors.grey, fontSize: 12),
+      );
+    }
+    final esperado =
+        mediaMovelAntes + combustivelAbastecidoRegistrado / capacidadeTanqueRegistrada * 100;
+    final diferenca = (mediaMovel - esperado).abs();
+    final ok = diferenca <= _tolerancia;
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: ok ? const Color(0xFFE6F4EC) : const Color(0xFFFDECEA),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        children: [
+          _linha('Nível antes do abastecimento', '${mediaMovelAntes.toStringAsFixed(1)} %'),
+          _linha('Abastecido', '${combustivelAbastecidoRegistrado.toStringAsFixed(2)} L'),
+          _linha('Nível esperado', '${esperado.toStringAsFixed(1)} %'),
+          _linha('Nível medido agora', '${mediaMovel.toStringAsFixed(1)} %'),
+          const Divider(),
+          Row(
+            children: [
+              Icon(ok ? Icons.check_circle : Icons.warning_amber_rounded,
+                  color: ok ? _verde : Colors.red),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  ok
+                      ? 'Consistente: diferença de ${diferenca.toStringAsFixed(1)} p.p.'
+                      : 'Diferença de ${diferenca.toStringAsFixed(1)} p.p. (limite ${_tolerancia.toStringAsFixed(0)} p.p.). '
+                          'Aguarde o nível estabilizar.',
+                  style: TextStyle(color: ok ? _verde : Colors.red, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _cartaoAbastecimento() {
+    return _cartao('Abastecimento', Icons.water_drop_outlined, [
+      _campo(tanqueController, 'Capacidade total do tanque (L)', _registrarTanque),
+      const SizedBox(height: 12),
+      SegmentedButton<bool>(
+        segments: const [
+          ButtonSegment(value: true, label: Text('Por litros'), icon: Icon(Icons.local_drink_outlined)),
+          ButtonSegment(value: false, label: Text('Por reais'), icon: Icon(Icons.attach_money)),
+        ],
+        selected: {isByLiters},
+        onSelectionChanged: (s) => setState(() => isByLiters = s.first),
+      ),
+      const SizedBox(height: 12),
+      if (isByLiters)
+        _campo(abastecerController, 'Quantidade abastecida (L)', _registrarLitros)
+      else ...[
+        TextField(
+          controller: precoController,
+          decoration: const InputDecoration(
+              labelText: 'Preço do litro (R\$)', border: OutlineInputBorder(), isDense: true),
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        ),
+        const SizedBox(height: 8),
+        _campo(valorGastoController, 'Valor gasto (R\$)', _registrarReais),
+      ],
+      const SizedBox(height: 12),
+      _verificacao(),
+      const SizedBox(height: 12),
+      Row(
+        children: [
+          OutlinedButton.icon(
+            onPressed: _tirarFoto,
+            icon: const Icon(Icons.add_a_photo_outlined),
+            label: Text(_imageFile == null ? 'Foto da bomba' : 'Trocar foto'),
+          ),
+          const SizedBox(width: 12),
+          if (_imageFile != null)
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: Image.file(File(_imageFile!.path), height: 56, width: 56, fit: BoxFit.cover),
+            ),
+        ],
+      ),
+      const SizedBox(height: 12),
+      SizedBox(
+        width: double.infinity,
+        child: FilledButton.icon(
+          style: FilledButton.styleFrom(backgroundColor: _verde, padding: const EdgeInsets.all(14)),
+          onPressed: _salvarAbastecimento,
+          icon: const Icon(Icons.save_alt),
+          label: const Text('Salvar dados do abastecimento'),
+        ),
+      ),
+    ]);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
-        decoration: const BoxDecoration(
-          color: Color.fromARGB(255, 255, 255, 255),
-        ),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.start,
-            children: [
-              SizedBox(height: 20),
-              if (confdata?.acc ?? false)
-                Container(
-                    padding: const EdgeInsets.fromLTRB(40, 10, 40, 10),
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                    ),
-                    //child: Accxyz(
-                       // x: _userAccelerometerEvent?.x.toStringAsFixed(3) ?? "?",
-                        //y: _userAccelerometerEvent?.y.toStringAsFixed(3) ?? "?",
-                        //z: _userAccelerometerEvent?.z.toStringAsFixed(3) ?? "?")
-                        ),
-              SizedBox(height: 10),
-              if (confdata?.gps ?? false)
-                Builder(builder: (BuildContext context) {
-                  return Column(
-                    children: [
-                      Text("GPS"),
-                      Container(height: 200, child: MapWidget(points: points)),
-                    ],
-                  );
-                }),
-              SizedBox(height: 10),
-              if (confdata?.obd ?? false)
-                Column(
-                  children: [
-                    SizedBox(height: 10),
-                    Text("Informações do OBD"),
-                    SizedBox(height: 10),
-                    Container(
-                      padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
-                      decoration: const BoxDecoration(
-                        color: Colors.white,
-                      ),
-                      child: Center(
-                          child: SingleChildScrollView(
-                              scrollDirection: Axis.vertical,
-                              child: Column(
-                                children: [
-                                  // Row(
-                                  //   mainAxisAlignment: MainAxisAlignment.spaceAround,
-                                  //   children: [
-                                  //      Text("Frequência"),
-                                  //     Text("Title"),
-                                  //    Text("Valor"),
-                                  //   ],
-                                  // ),
-
-                                  ListView.builder(
-                                    physics:
-                                        const NeverScrollableScrollPhysics(),
-                                    shrinkWrap: true,
-                                    itemCount: _responses.length,
-                                    itemBuilder: (context, i) {
-                                      return Column(
-                                        children: [
-                                          Textdata(
-                                            // print([i.pid, i.obddata.unit]);
-                                            tipo: _responses[i].obddata.title ==
-                                                    ''
-                                                ? 'PID $i'
-                                                : _responses[i].obddata.title,
-                                            texto: _responses[i]
-                                                        .obddata
-                                                        .response ==
-                                                    ''
-                                                ? 'PID $i'
-                                                : '${_responses[i].obddata.response} ${_responses[i].obddata.unit}',
-                                          ),
-                                        ],
-                                      );
-                                    },
-                                  ),
-                                  SizedBox(height: 10),
-                                  Column(
-                                    children: [
-                                      SizedBox(height: 10),
-                                      Text("Informações do Usuário"),
-                                      SizedBox(height: 10),
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: TextField(
-                                              controller: tanqueController,
-                                              decoration: InputDecoration(
-                                                labelText:
-                                                    'Capacidade total do tanque (L)',
-                                                border: OutlineInputBorder(),
-                                              ),
-                                              keyboardType:
-                                                  TextInputType.number,
-                                            ),
-                                          ),
-                                          SizedBox(width: 8),
-                                          ElevatedButton(
-                                            onPressed: () {
-                                              setState(() {
-                                                capacidadeTanqueRegistrada =
-                                                    double.tryParse(
-                                                            tanqueController
-                                                                .text) ??
-                                                        0;
-                                              });
-                                              ScaffoldMessenger.of(context)
-                                                  .showSnackBar(
-                                                SnackBar(
-                                                    content: Text(
-                                                        "Capacidade do tanque registrada!"),
-                                                    duration:
-                                                        Duration(seconds: 1)),
-                                              );
-                                            },
-                                            child: Icon(Icons.check),
-                                          ),
-                                        ],
-                                      ),
-                                      SizedBox(height: 10),
-                                      // Escolha entre litros ou reais
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: Row(
-                                              children: [
-                                                Expanded(
-                                                  child: ElevatedButton(
-                                                    style: ElevatedButton.styleFrom(
-                                                      backgroundColor: isByLiters
-                                                          ? Colors.green
-                                                          : null,
-                                                    ),
-                                                    onPressed: () {
-                                                      setState(() {
-                                                        isByLiters = true;
-                                                      });
-                                                    },
-                                                    child: Text('Por Litros'),
-                                                  ),
-                                                ),
-                                                SizedBox(width: 8),
-                                                Expanded(
-                                                  child: ElevatedButton(
-                                                    style: ElevatedButton.styleFrom(
-                                                      backgroundColor: !isByLiters
-                                                          ? Colors.green
-                                                          : null,
-                                                    ),
-                                                    onPressed: () {
-                                                      setState(() {
-                                                        isByLiters = false;
-                                                      });
-                                                    },
-                                                    child: Text('Por Reais'),
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      SizedBox(height: 10),
-                                      if (isByLiters)
-                                        Row(
-                                          children: [
-                                            Expanded(
-                                              child: TextField(
-                                                controller: abastecerController,
-                                                decoration: InputDecoration(
-                                                  labelText:
-                                                      'Quantidade que deseja abastecer (L)',
-                                                  border: OutlineInputBorder(),
-                                                ),
-                                                keyboardType:
-                                                    TextInputType.number,
-                                              ),
-                                            ),
-                                            SizedBox(width: 8),
-                                            ElevatedButton(
-                                              onPressed: () {
-                                                setState(() {
-                                                  combustivelAbastecidoRegistrado =
-                                                      double.tryParse(
-                                                              abastecerController
-                                                                  .text) ??
-                                                          0;
-                                                  mediaMovelAntes = mediaMovel;
-                                                });
-                                                ScaffoldMessenger.of(context)
-                                                    .showSnackBar(
-                                                  SnackBar(
-                                                      content: Text(
-                                                          "Quantidade abastecida registrada!"),
-                                                      duration:
-                                                          Duration(seconds: 1)),
-                                                );
-                                              },
-                                              child: Icon(Icons.check),
-                                            ),
-                                          ],
-                                        )
-                                      else
-                                        Column(
-                                          children: [
-                                            SizedBox(height: 6),
-                                            Row(
-                                              children: [
-                                                Expanded(
-                                                  child: TextField(
-                                                    controller: precoController,
-                                                    decoration: InputDecoration(
-                                                      labelText:
-                                                          'Preço do litro (R\$)',
-                                                      border:
-                                                          OutlineInputBorder(),
-                                                    ),
-                                                    keyboardType:
-                                                        TextInputType.number,
-                                                  ),
-                                                ),
-                                                SizedBox(width: 8),
-                                              ],
-                                            ),
-                                            SizedBox(height: 8),
-                                            Row(
-                                              children: [
-                                                Expanded(
-                                                  child: TextField(
-                                                    controller:
-                                                        valorGastoController,
-                                                    decoration: InputDecoration(
-                                                      labelText:
-                                                          'Valor gasto (R\$)',
-                                                      border:
-                                                          OutlineInputBorder(),
-                                                    ),
-                                                    keyboardType:
-                                                        TextInputType.number,
-                                                  ),
-                                                ),
-                                                SizedBox(width: 8),
-                                                ElevatedButton(
-                                                  onPressed: () {
-                                                    double preco = double.tryParse(
-                                                            precoController
-                                                                .text) ??
-                                                        0;
-                                                    double gasto = double.tryParse(
-                                                            valorGastoController
-                                                                .text) ??
-                                                        0;
-                                                    if (preco <= 0 || gasto <= 0) {
-                                                      ScaffoldMessenger.of(
-                                                              context)
-                                                          .showSnackBar(
-                                                        SnackBar(
-                                                          content: Text(
-                                                              'Informe preço e valor gastos válidos'),
-                                                          duration:
-                                                              Duration(seconds: 1),
-                                                        ),
-                                                      );
-                                                      return;
-                                                    }
-                                                    double litros = gasto / preco;
-                                                    setState(() {
-                                                      combustivelAbastecidoRegistrado =
-                                                          litros;
-                                                      mediaMovelAntes = mediaMovel;
-                                                    });
-                                                    ScaffoldMessenger.of(context)
-                                                        .showSnackBar(
-                                                      SnackBar(
-                                                          content: Text(
-                                                              "Equivalente a ${litros.toStringAsFixed(2)} L registrado."),
-                                                          duration:
-                                                              Duration(seconds: 2)),
-                                                    );
-                                                  },
-                                                  child: Icon(Icons.check),
-                                                ),
-                                              ],
-                                            ),
-                                          ],
-                                        ),
-                                      SizedBox(height: 15),
-                                      Text("Tire foto da bomba de combustível"),
-                                      SizedBox(height: 15),
-                                      ElevatedButton(
-                                        onPressed: _tirarFoto,
-                                        style: ElevatedButton.styleFrom(
-                                          padding: EdgeInsets.zero,
-                                          minimumSize: Size(50, 50),
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius:
-                                                BorderRadius.circular(16),
-                                          ),
-                                        ),
-                                        child:
-                                            Icon(Icons.add_a_photo, size: 25),
-                                      ),
-                                      if (_imageFile != null) ...[
-                                        SizedBox(height: 10),
-                                        Image.file(File(_imageFile!.path),
-                                            height: 100),
-                                      ],
-                                      SizedBox(width: 10),
-                                      SizedBox(height: 20),
-                                      ElevatedButton(
-                                        onPressed: () async {
-                                          final diretorioUsuario =
-                                              await path_prov
-                                                  .getExternalStorageDirectory();
-                                          File file = File(
-                                              "${diretorioUsuario!.path}/medicao_${carimboArquivo(DateTime.now())}.json");
-                                          await file.create();
-                                          double capacidadeTanque =
-                                              capacidadeTanqueRegistrada;
-                                          double combustivelAbastecido =
-                                              combustivelAbastecidoRegistrado;
-                                          double precoLitroReais = 0.0;
-                                          double totalAbastecidoReais = 0.0;
-
-                                          // Se a entrada foi por reais, calcula litros a partir do preço e do valor gasto
-                                          if (!isByLiters) {
-                                            precoLitroReais = double.tryParse(precoController.text) ?? 0.0;
-                                            totalAbastecidoReais = double.tryParse(valorGastoController.text) ?? 0.0;
-                                            if (precoLitroReais > 0 && totalAbastecidoReais > 0) {
-                                              combustivelAbastecido = totalAbastecidoReais / precoLitroReais;
-                                              // atualiza registro local também
-                                              combustivelAbastecidoRegistrado = combustivelAbastecido;
-                                            }
-                                          }
-
-                                          if (capacidadeTanque <= 0 || combustivelAbastecido <= 0) {
-                                            ScaffoldMessenger.of(context)
-                                                .showSnackBar(
-                                              SnackBar(
-                                                content: Text(
-                                                    "Registre a capacidade do tanque e o abastecimento primeiro!"),
-                                                duration: Duration(seconds: 1),
-                                              ),
-                                            );
-                                            return;
-                                          }
-
-                                          double percentualAbastecido =
-                                              (combustivelAbastecido /
-                                                      capacidadeTanque) *
-                                                  100;
-
-                                          // Obtém o nível de combustível exibido pelo OBD
-                                          double nivelMedidoOBD = mediaMovel;
-
-                                          // Calcula o percentual esperado após abastecimento
-                                          double percentualEsperado =
-                                              mediaMovelAntes +
-                                                  ((combustivelAbastecido /
-                                                          capacidadeTanque) *
-                                                      100);
-
-                                          // Calcula a diferença absoluta
-                                          double diferenca = (nivelMedidoOBD -
-                                                  percentualEsperado)
-                                              .abs();
-
-                                          // Define um limite de tolerância (exemplo: 2%)
-                                          double limiteTolerancia = 2.0;
-
-                                          // Verifica se há discrepância significativa
-
-                                          Position? posicaoAtual;
-                                          try {
-                                            posicaoAtual = await Geolocator
-                                                .getCurrentPosition(
-                                              // ignore: deprecated_member_use
-                                              desiredAccuracy:
-                                                  LocationAccuracy.high,
-                                            );
-                                          } catch (e) {
-                                            ScaffoldMessenger.of(context)
-                                                .showSnackBar(
-                                              SnackBar(
-                                                content: Text(
-                                                    "Erro ao obter localização: $e"),
-                                                duration: Duration(seconds: 1),
-                                              ),
-                                            );
-                                            return;
-                                          }
-
-                                          String deviceId = await DeviceService.getDeviceId();
-                                          double latitude = posicaoAtual.latitude;
-                                          double longitude = posicaoAtual.longitude;
-
-                                          String? imageHash;
-                                          if (_imageFile != null) {File imageFile = File(_imageFile!.path); imageHash = await generateImageHash(imageFile);
-                                          }
-
-                                          if (diferenca > limiteTolerancia) {
-                                            ScaffoldMessenger.of(context)
-                                                .showSnackBar(
-                                              SnackBar(
-                                                content: Text(
-                                                  "🚨 Atenção: abastecimento não concluído, envie os dados novamente em alguns segundos",
-                                                  style: TextStyle(
-                                                      color: Colors.red),
-                                                ),
-                                                duration: Duration(seconds: 5),
-                                              ),
-                                            );
-                                            return;
-                                          } else {
-                                            ScaffoldMessenger.of(context)
-                                                .showSnackBar(
-                                              SnackBar(
-                                                content: Text(
-                                                  "✅ Medição consistente com abastecimento informado.",
-                                                  style: TextStyle(
-                                                      color: Colors.green),
-                                                ),
-                                                duration: Duration(seconds: 3),
-                                              ),
-                                            );
-                                            List<Map<String, dynamic>>
-                                                jsonData = savejson.map((data) {
-                                              var originalData = data.toJson();
-                                              originalData["timestamp"] = DateTime.now().toUtc().toIso8601String();
-                                              originalData["total_tanque_litros"] = capacidadeTanque.toStringAsFixed(2);
-                                              originalData["total_abastecido_litros"] = combustivelAbastecido.toStringAsFixed(2);
-                                              // Campos adicionais quando informado por reais
-                                              if (!isByLiters) {
-                                                originalData["preco_litro_reais"] = precoLitroReais.toStringAsFixed(2);
-                                                originalData["total_abastecido_reais"] = totalAbastecidoReais.toStringAsFixed(2);
-                                              }
-                                              originalData["percentual_abastecido"] = percentualAbastecido.toStringAsFixed(2);
-                                              originalData["latitude"] = latitude.toStringAsFixed(7);
-                                              originalData["longitude"] = longitude.toStringAsFixed(7);
-                                              originalData["imagem_hash"] = imageHash ?? "Sem imagem";
-                                              originalData["media_movel_nivel_combustivel_antes"] = mediaMovelAntes.toStringAsFixed(2);
-                                              originalData["media_movel_nivel_combustivel"] = mediaMovel.toStringAsFixed(2);
-                                              originalData["diferenca_percentual_detectada"] = (ultimosNiveis.length >= 10 ? diferenca : 0.0).toStringAsFixed(2);
-                                              originalData["device_id"] = deviceId;
-                                              return originalData;
-                                            }).toList();
-                                            if (jsonData.isNotEmpty) {
-                                              // Envio para a AWS desativado: salva só no celular
-                                              // await enviarListaJsonParaGateway(
-                                              //     jsonData);
-
-                                              const JsonEncoder encoder =
-                                                  JsonEncoder.withIndent(" ");
-                                              final String jsonString =
-                                                  encoder.convert(jsonData);
-                                              await file
-                                                  .writeAsString(jsonString);
-
-                                              ScaffoldMessenger.of(context)
-                                                  .showSnackBar(
-                                                SnackBar(
-                                                  content: Text(
-                                                      "Dados salvos com sucesso!"),
-                                                  duration:
-                                                      Duration(seconds: 1),
-                                                ),
-                                              );
-                                            }
-                                          }
-                                        },
-                                        child: Text(
-                                            "Salvar dados do abastecimento"),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ))),
-                    ),
-                  ],
-                ),
-            ],
-          ),
-        ));
+      color: const Color(0xFFF6F8F7),
+      child: ListView(
+        padding: const EdgeInsets.only(top: 6, bottom: 96),
+        children: [
+          _cartaoStatus(),
+          if (confdata?.obd ?? false) ...[
+            _cartaoNivel(),
+            _cartaoLeituras(),
+          ],
+          if (confdata?.gps ?? false) _cartaoGps(),
+          if (confdata?.obd ?? false) _cartaoAbastecimento(),
+        ],
+      ),
+    );
   }
 }
