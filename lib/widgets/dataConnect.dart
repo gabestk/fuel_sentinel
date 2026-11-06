@@ -492,14 +492,13 @@ class _ConnectState extends State<Data_Connect> {
     // velocidade (01 0D), se estiver entre os PIDs: o nível só vale com o carro parado
     double? velocidade;
     for (final resp in responses1) {
-      if (resp.pid.replaceAll(' ', '') == '010D') {
+      if (_pidLimpo(resp.pid) == '010D') {
         velocidade = double.tryParse(resp.obddata.response.trim());
       }
     }
 
     for (var resp in _responses) {
-      if (resp.pid == "01 2F" ||
-          resp.obddata.title == "nivel de combustivel") {
+      if (_ehPidNivel(resp.pid)) {
         // sem resposta (ex.: ignição desligada) não entra na média
         final nivel = double.tryParse(resp.obddata.response.trim());
         if (nivel == null) continue;
@@ -677,6 +676,10 @@ count = 0;
   }
 
   bool _pararLeitura = false;
+  String? _brutaNivel; // última resposta do adaptador ao 01 2F, para diagnóstico
+
+  static String _pidLimpo(String pid) => pid.replaceAll(RegExp(r'\s'), '').toUpperCase();
+  static bool _ehPidNivel(String pid) => _pidLimpo(pid) == '012F';
   int _leiturasObd = 0;
 
   /// Valor de um PID a partir da resposta bruta do adaptador. Usa a fórmula da
@@ -686,10 +689,10 @@ count = 0;
     final pid = p["PID"].toString();
     if (_ehPidVin(pid)) return decodificarVin(bruta);
     if (respostaSemDados(bruta)) return '';
-    final partes = pid.trim().split(RegExp(r'\s+'));
-    if (partes.length < 2) return '';
-    final modo = int.tryParse(partes[0], radix: 16);
-    final codigo = int.tryParse(partes[1], radix: 16);
+    final limpo = _pidLimpo(pid);
+    if (limpo.length < 4) return '';
+    final modo = int.tryParse(limpo.substring(0, 2), radix: 16);
+    final codigo = int.tryParse(limpo.substring(2), radix: 16);
     if (modo == null || codigo == null) return '';
     // bytes de dados depois de "4X YY"
     final prefixo = '${hex2(modo + 0x40)}${hex2(codigo)}';
@@ -730,6 +733,17 @@ count = 0;
   /// ciclo começa logo em seguida.
   Future<void> _lacoObd() async {
     final pedidos = (json.decode(_pidsAtivosJson()) as List).cast<Map>();
+    // o abastecimento depende do nível: se ele não estiver marcado, é pedido assim mesmo
+    if (!pedidos.any((p) => _ehPidNivel(p["PID"].toString()))) {
+      pedidos.insert(0, {
+        "PID": "01 2F",
+        "length": 1,
+        "title": "nivel de combustivel",
+        "unit": "%",
+        "description": "<int>, ( [0] * 100 ) / 255",
+        "status": true
+      });
+    }
     final intervalo = Duration(seconds: int.tryParse(confdata!.timereqobd) ?? 1);
     final elm = widget.elm;
     while (mounted && !_pararLeitura && elm.conectado) {
@@ -751,6 +765,7 @@ count = 0;
           bruta = '';
         }
         _leiturasObd++;
+        if (_ehPidNivel(pid)) _brutaNivel = bruta.replaceAll('>', '').replaceAll(RegExp(r'\s+'), ' ').trim();
         leituras.add(ObdRawData(
           pid: pid,
           obddata: ObdData(
@@ -1296,11 +1311,22 @@ count = 0;
       const SizedBox(height: 6),
       Text(
         atual == null
-            ? 'Aguardando a primeira leitura do nível...'
+            ? _motivoSemNivel()
             : 'Média móvel das últimas ${ultimosNiveis.length} leituras: ${mediaMovel.toStringAsFixed(1)} %',
         style: const TextStyle(color: Colors.grey, fontSize: 12),
       ),
     ]);
+  }
+
+  /// Explica por que o nível ainda não apareceu.
+  String _motivoSemNivel() {
+    final b = _brutaNivel;
+    if (b == null) return 'Aguardando a primeira leitura do nível...';
+    if (b.isEmpty) return 'O adaptador não respondeu ao PID 01 2F (tempo esgotado).';
+    if (respostaSemDados(b)) {
+      return 'O veículo (ou o emulador) não informa o nível: respondeu "$b" ao PID 01 2F.';
+    }
+    return 'Resposta ao PID 01 2F não reconhecida: "$b".';
   }
 
   Widget _cartaoLeituras() {

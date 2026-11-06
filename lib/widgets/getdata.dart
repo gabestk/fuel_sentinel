@@ -48,7 +48,7 @@ class _FloatState extends State<InitBluetooth> {
     getresponse = pidDisc!.values.toList();
 
     // PID 01 2F - nível de combustível
-    bool temNivelCombustivel = getresponse.any((e) => e.pid == '01 2F');
+    bool temNivelCombustivel = getresponse.any((e) => e.pid.replaceAll(' ', '').toUpperCase() == '012F');
     if (!temNivelCombustivel) {
       var pidNivel = pidsDisc(
         pid: '01 2F',
