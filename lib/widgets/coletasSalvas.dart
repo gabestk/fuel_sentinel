@@ -1,10 +1,11 @@
 // Lista dos CSVs salvos, usada no Scanner e no Abastecimento. Tocar num arquivo
 // abre a visualização dentro do app. O menu permite abrir em outro aplicativo
-// ou apagar.
+// compartilhar (WhatsApp, e-mail, Drive...) ou apagar.
 
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../functions/pastas.dart';
 import 'csvViewer.dart';
@@ -58,11 +59,13 @@ class ItemColeta extends StatelessWidget {
         onSelected: (op) {
           if (op == 'ver') abrirCsv(context, arquivo);
           if (op == 'outro') abrirEmOutroApp(context, arquivo);
+          if (op == 'compartilhar') compartilharCsv(context, arquivo);
           if (op == 'apagar') _apagar(context);
         },
         itemBuilder: (_) => [
           const PopupMenuItem(value: 'ver', child: Text('Abrir no app')),
           const PopupMenuItem(value: 'outro', child: Text('Abrir em outro aplicativo')),
+          const PopupMenuItem(value: 'compartilhar', child: Text('Compartilhar')),
           PopupMenuItem(value: 'apagar', enabled: !bloqueado, child: const Text('Apagar')),
         ],
       ),
@@ -136,5 +139,20 @@ class _ColetasPageState extends State<ColetasPage> {
 }
 
 /// Abre a página de coletas salvas.
+/// Abre o menu de compartilhamento do Android com o arquivo da coleta.
+Future<void> compartilharCsv(BuildContext context, File arquivo) async {
+  try {
+    await Share.shareXFiles(
+      [XFile(arquivo.path, mimeType: 'text/csv')],
+      subject: arquivo.uri.pathSegments.last,
+    );
+  } catch (e) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Não foi possível compartilhar: $e')));
+    }
+  }
+}
+
 Future<void> abrirColetas(BuildContext context) =>
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ColetasPage()));
