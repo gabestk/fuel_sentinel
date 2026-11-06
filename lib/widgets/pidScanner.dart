@@ -13,8 +13,10 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:flutter_bluetooth_serial/flutter_bluetooth_serial.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -27,6 +29,7 @@ import '../functions/pastas.dart';
 import '../functions/preferencias.dart';
 import 'coletasSalvas.dart';
 import 'csvViewer.dart';
+import 'MapGps.dart';
 
 enum _Etapa { desconectado, conectando, buscando, pronto, coletando, parando }
 
@@ -77,6 +80,15 @@ class _PidScannerState extends State<PidScanner> {
   final Stopwatch _cronometro = Stopwatch();
   Timer? _gravacao;
   int _linhas = 0;
+
+  // tela da coleta: trajeto, voltas e o que está sendo lido
+  final List<LatLng> _trajeto = [];
+  final List<LatLng> _fimVoltas = [];
+  final List<double> _temposVolta = [];
+  int _volta = 1;
+  double _tInicioVolta = 0;
+  bool _gpsNaColeta = false;
+  List<String> _nomesNaColeta = [];
   int _leituras = 0;
   int _leiturasNoUltimoTick = 0;
   double _tUltimoTick = 0;
@@ -303,7 +315,14 @@ class _PidScannerState extends State<PidScanner> {
     _assinaturas.add(Geolocator.getPositionStream(
       locationSettings:
           const LocationSettings(accuracy: LocationAccuracy.bestForNavigation, distanceFilter: 0),
-    ).listen((pos) => _posicao = pos, onError: (_) {}));
+    ).listen((pos) {
+      _posicao = pos;
+      final p = LatLng(pos.latitude, pos.longitude);
+      // guarda um ponto a cada 2 m para o mapa não ficar pesado
+      if (_trajeto.isEmpty || const Distance().as(LengthUnit.Meter, _trajeto.last, p) >= 2) {
+        _trajeto.add(p);
+      }
+    }, onError: (_) {}));
     return true;
   }
 
@@ -365,6 +384,7 @@ class _PidScannerState extends State<PidScanner> {
         'Accel (Grav) X (m/s²)', 'Accel (Grav) Y (m/s²)', 'Accel (Grav) Z (m/s²)',
         'Rotation Rate X (deg/s)', 'Rotation Rate Y (deg/s)', 'Rotation Rate Z (deg/s)',
       ],
+      'Lap',
       'PID refresh rate (Hz)',
       'Elapsed time (sec)',
     ];
@@ -380,6 +400,16 @@ class _PidScannerState extends State<PidScanner> {
     _ultimos.clear();
     _ultimosCalc = {};
     _linhas = 0;
+    _trajeto.clear();
+    _fimVoltas.clear();
+    _temposVolta.clear();
+    _volta = 1;
+    _tInicioVolta = 0;
+    _gpsNaColeta = comGps;
+    _nomesNaColeta = [
+      for (final d in defsCsv) d.nome,
+      for (final c in calcs) c.nome,
+    ];
     _leituras = 0;
     _leiturasNoUltimoTick = 0;
     _tUltimoTick = 0;
@@ -470,11 +500,28 @@ class _PidScannerState extends State<PidScanner> {
         for (final v in [_acel, _acelGrav, _giro])
           for (var i = 0; i < 3; i++) _num(v?[i]),
       ],
+      '$_volta',
       _num(_taxaPids),
       _num(t),
     ]);
     _linhas = logger.linhas;
     if (mounted) setState(() {});
+  }
+
+  /// Botão "Fim da volta": a partir daqui as linhas do CSV ganham o número da
+  /// próxima volta (coluna Lap) e o ponto aparece como bandeira no mapa.
+  void _marcarFimDaVolta() {
+    final t = _cronometro.elapsedMicroseconds / 1e6;
+    final duracao = t - _tInicioVolta;
+    HapticFeedback.mediumImpact();
+    setState(() {
+      _temposVolta.add(duracao);
+      final pos = _posicao;
+      if (pos != null) _fimVoltas.add(LatLng(pos.latitude, pos.longitude));
+      _volta++;
+      _tInicioVolta = t;
+    });
+    _aviso('Volta ${_volta - 1} terminou: ${_tempo(Duration(milliseconds: (duracao * 1000).round()))}');
   }
 
   Future<void> _pararColeta() async {
@@ -907,6 +954,95 @@ class _PidScannerState extends State<PidScanner> {
     );
   }
 
+  Widget _telaColeta() {
+    final tVolta = _cronometro.elapsedMicroseconds / 1e6 - _tInicioVolta;
+    final cinza = TextStyle(fontSize: 12, color: Theme.of(context).hintColor);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (_gpsNaColeta)
+          Card(
+            margin: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+            clipBehavior: Clip.antiAlias,
+            child: SizedBox(
+              height: 260,
+              child: MapaTrajeto(pontos: List.of(_trajeto), fimDeVolta: List.of(_fimVoltas)),
+            ),
+          ),
+        Card(
+          margin: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.flag, color: Colors.orange),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text('Volta $_volta  ·  ${_tempo(Duration(seconds: tVolta.round()))}',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                    ),
+                  ],
+                ),
+                if (_temposVolta.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    'Voltas anteriores: ${[
+                      for (var i = 0; i < _temposVolta.length; i++)
+                        '${i + 1}ª ${_tempo(Duration(seconds: _temposVolta[i].round()))}'
+                    ].join('  ·  ')}',
+                    style: cinza,
+                  ),
+                ],
+                const SizedBox(height: 10),
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Colors.orange.shade700,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                  onPressed: _etapa == _Etapa.coletando ? _marcarFimDaVolta : null,
+                  icon: const Icon(Icons.flag),
+                  label: const Text('Fim da volta', style: TextStyle(fontSize: 16)),
+                ),
+              ],
+            ),
+          ),
+        ),
+        Card(
+          margin: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Coletando ${_nomesNaColeta.length} itens',
+                    style: const TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 4),
+                Text('$_linhas linhas gravadas  ·  $_leituras leituras de PID  ·  '
+                    '${_taxaPids.toStringAsFixed(1)} PIDs/s', style: cinza),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    for (final n in _nomesNaColeta)
+                      Chip(
+                        label: Text(n, style: const TextStyle(fontSize: 12)),
+                        visualDensity: VisualDensity.compact,
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final coletando = _etapa == _Etapa.coletando;
@@ -918,11 +1054,15 @@ class _PidScannerState extends State<PidScanner> {
         padding: const EdgeInsets.only(bottom: 96),
         children: [
           _cabecalho(),
-          if (_suportados.isNotEmpty) ...[
+          // durante a coleta: mapa, voltas e o que está sendo lido (sem os valores,
+          // para a tela ficar leve)
+          if (_emColeta)
+            _telaColeta()
+          else if (_suportados.isNotEmpty) ...[
             _opcoes(),
             _listaPids(),
           ],
-          _listaColetas(),
+          if (!_emColeta) _listaColetas(),
         ],
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,

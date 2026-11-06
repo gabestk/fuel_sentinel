@@ -4,10 +4,12 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/material.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:syncfusion_flutter_charts/charts.dart';
 
 import '../functions/csv_leitor.dart';
+import 'MapGps.dart';
 
 const _verde = Color(0xFF008355);
 
@@ -51,6 +53,61 @@ class _CsvViewerState extends State<CsvViewer> {
   List<int> _numericas = [];
   int? _coluna;
   String? _erro;
+  List<LatLng> _trajeto = [];
+  List<LatLng> _voltas = [];
+
+  /// Trajeto do GPS gravado no arquivo e os pontos onde cada volta terminou.
+  void _montarTrajeto(TabelaCsv t) {
+    int coluna(List<String> nomes) => t.colunas.indexWhere((c) => nomes.contains(c));
+    final iLat = coluna(['Latitude (deg)', 'Latitude']);
+    final iLon = coluna(['Longitude (deg)', 'Longitude']);
+    final iVolta = coluna(['Lap']);
+    if (iLat < 0 || iLon < 0) return;
+    final pts = <LatLng>[];
+    final voltas = <LatLng>[];
+    String? voltaAnterior;
+    for (var i = 0; i < t.nLinhas; i++) {
+      final la = t.numero(i, iLat), lo = t.numero(i, iLon);
+      final valido = la != null && lo != null && !(la == 0 && lo == 0);
+      if (iVolta >= 0 && iVolta < t.linhas[i].length) {
+        final v = t.linhas[i][iVolta];
+        if (voltaAnterior != null && v != voltaAnterior && pts.isNotEmpty) voltas.add(pts.last);
+        voltaAnterior = v;
+      }
+      if (valido) pts.add(LatLng(la!, lo!));
+    }
+    _trajeto = pts;
+    _voltas = voltas;
+  }
+
+  Widget _mapa() => Card(
+        margin: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          children: [
+            SizedBox(
+              height: 260,
+              child: MapaTrajeto(pontos: _trajeto, fimDeVolta: _voltas, seguir: false),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(8),
+              child: Wrap(
+                spacing: 16,
+                children: [
+                  _legenda(Icons.trip_origin, Colors.green, 'Início'),
+                  _legenda(Icons.stop_circle, Colors.red, 'Fim'),
+                  if (_voltas.isNotEmpty) _legenda(Icons.flag, Colors.orange, 'Fim de volta (${_voltas.length})'),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+
+  Widget _legenda(IconData i, Color c, String t) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [Icon(i, color: c, size: 16), const SizedBox(width: 4), Text(t, style: const TextStyle(fontSize: 12))],
+      );
 
   @override
   void initState() {
@@ -68,6 +125,7 @@ class _CsvViewerState extends State<CsvViewer> {
         _tempos = r.$2;
         _numericas = r.$3.where((c) => !_ehColunaDeTempo(r.$1.colunas[c])).toList();
         _coluna = _escolherColunaInicial(r.$1);
+        _montarTrajeto(r.$1);
       });
     } catch (e) {
       if (mounted) setState(() => _erro = '$e');
@@ -239,6 +297,7 @@ class _CsvViewerState extends State<CsvViewer> {
               : ListView(
                   children: [
                     _resumo(t),
+                    if (_trajeto.length > 1) _mapa(),
                     _grafico(t),
                     _tabelaWidget(t),
                   ],
