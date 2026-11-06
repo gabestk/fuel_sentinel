@@ -79,7 +79,7 @@ class _MapaTrajetoState extends State<MapaTrajeto> {
         initialZoom: 16,
         maxZoom: 19,
         initialCameraFit: enquadrar
-            ? CameraFit.bounds(bounds: limites!, padding: const EdgeInsets.all(28))
+            ? CameraFit.bounds(bounds: limites, padding: const EdgeInsets.all(28))
             : null,
         onMapReady: () {
           _pronto = true;

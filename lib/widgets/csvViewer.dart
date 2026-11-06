@@ -74,7 +74,7 @@ class _CsvViewerState extends State<CsvViewer> {
         if (voltaAnterior != null && v != voltaAnterior && pts.isNotEmpty) voltas.add(pts.last);
         voltaAnterior = v;
       }
-      if (valido) pts.add(LatLng(la!, lo!));
+      if (valido) pts.add(LatLng(la, lo));
     }
     _trajeto = pts;
     _voltas = voltas;
