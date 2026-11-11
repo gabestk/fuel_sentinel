@@ -69,7 +69,7 @@ class _FloatState extends State<InitBluetooth> {
     return c != null && (c.on || !c.obd);
   }
 
-  bool get _pronto => _qtdAtivos > 0 && (_semAdaptador || _conectado);
+  bool get _pronto => _semAdaptador || _conectado;
 
   /// Passo 1: escolhe o adaptador pareado e conecta.
   Future<void> conectar() async {
@@ -145,10 +145,6 @@ class _FloatState extends State<InitBluetooth> {
   /// para fazer outra coleta sem reconectar.
   Future<void> iniciar() async {
     await init();
-    if (_qtdAtivos == 0) {
-      showerror("Marque ao menos um PID");
-      return;
-    }
     if (confdata == null) {
       showerror("Configuração ainda carregando, tente de novo");
       return;
