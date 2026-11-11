@@ -1,6 +1,5 @@
-// Aba "Abastecimento": lista os PIDs usados na conferência do abastecimento,
-// deixa marcar quais serão lidos, conecta ao adaptador e abre a coleta
-// (página Obddata / Data_Connect).
+// Aba "Abastecimento": conecta ao adaptador e abre a coleta (página Obddata /
+// Data_Connect). Os PIDs são fixos: nível de combustível (01 2F) e VIN (09 02).
 
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
@@ -9,7 +8,6 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../dataBaseClass/confSimu.dart';
-import '../dataBaseClass/pidDiscoveryClass.dart';
 import '../functions/elm327.dart';
 import '../route/autoroute.dart';
 import 'coletasSalvas.dart';
@@ -34,47 +32,8 @@ class _FloatState extends State<InitBluetooth> {
   bool _conectando = false;
   bool _conectado = false;
   String? _adaptador;
-  var pid = TextEditingController(text: '');
-  var length = TextEditingController(text: ''); // unidade
-  var title = TextEditingController(text: '');
-  var description = TextEditingController(text: '');
-  Box? pidDisc;
-
-  List<dynamic> getresponse = [];
-
 
   Future<void> init() async {
-    pidDisc = await Hive.openBox<pidsDisc>('pidsDisc');
-    getresponse = pidDisc!.values.toList();
-
-    // PID 01 2F - nível de combustível
-    bool temNivelCombustivel = getresponse.any((e) => e.pid.replaceAll(' ', '').toUpperCase() == '012F');
-    if (!temNivelCombustivel) {
-      var pidNivel = pidsDisc(
-        pid: '01 2F',
-        title: 'nível de combustível',
-      );
-      pidNivel.unit = '%';
-      pidNivel.description = '<int>, ( [0] * 100 ) / 255';
-      pidNivel.ativo = true;
-      await pidDisc!.add(pidNivel);
-      getresponse.add(pidNivel);
-    }
-
-    // PID 09 02 - VIN do veículo
-    bool temVin = getresponse.any((e) => e.pid == '09 02');
-    if (!temVin) {
-      var pidVin = pidsDisc(
-        pid: '09 02',
-        title: 'VIN',
-      );
-      pidVin.unit = '';
-      pidVin.description = '<string>, número de identificação do veículo';
-      pidVin.ativo = true;
-      await pidDisc!.add(pidVin);
-      getresponse.add(pidVin);
-    }
-
     confapp = await Hive.openBox<Confdata>('conf');
     if (confapp!.isNotEmpty) confdata = confapp!.getAt(0);
 
@@ -89,10 +48,6 @@ class _FloatState extends State<InitBluetooth> {
 
   @override
   void dispose() {
-    pid.dispose();
-    length.dispose();
-    title.dispose();
-    description.dispose();
     _elm.desconectar();
     super.dispose();
   }
@@ -105,138 +60,8 @@ class _FloatState extends State<InitBluetooth> {
   }
 
   // -------------------------------------------------------------------------
-  // PIDs (salvos no Hive, caixa 'pidsDisc')
-  // -------------------------------------------------------------------------
-  Future<void> insetpid(int index) async {
-    var element = pidsDisc(pid: pid.text.trim().toUpperCase(), title: title.text.trim());
-    element.unit = length.text.trim();
-    element.description = description.text.trim();
-
-    pidDisc = await Hive.openBox<pidsDisc>('pidsDisc');
-
-    if (index != -1) {
-      element.ativo = getresponse[index].ativo; // mantém a marcação ao editar
-      await pidDisc!.putAt(index, element);
-      getresponse[index] = element;
-    } else {
-      element.ativo = true;
-      await pidDisc!.add(element);
-      getresponse.add(element);
-    }
-
-    setState(() {});
-  }
-
-  Future<void> deletpid(int index) async {
-    pidDisc = await Hive.openBox<pidsDisc>('pidsDisc');
-    await pidDisc!.deleteAt(index);
-    getresponse.removeAt(index);
-    setState(() {});
-  }
-
-  /// Marca ou desmarca um PID e grava no Hive, para a coleta ler a mesma seleção.
-  Future<void> alternarPid(int index, bool ativo) async {
-    final p = getresponse[index] as pidsDisc;
-    p.ativo = ativo;
-    setState(() {});
-    pidDisc = await Hive.openBox<pidsDisc>('pidsDisc');
-    await pidDisc!.putAt(index, p);
-  }
-
-  void openedit(TextEditingController p, l, t, d, int index) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(index == -1 ? 'Adicionar PID' : 'Editar PID'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: ListView(
-            shrinkWrap: true,
-            children: [
-              TextField(
-                controller: p,
-                textCapitalization: TextCapitalization.characters,
-                decoration: const InputDecoration(
-                  border: OutlineInputBorder(),
-                  labelText: 'PID',
-                  hintText: 'ex.: 01 2F',
-                ),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: t,
-                decoration: const InputDecoration(
-                  border: OutlineInputBorder(),
-                  labelText: 'Nome',
-                  hintText: 'ex.: nível de combustível',
-                ),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: l,
-                decoration: const InputDecoration(
-                  border: OutlineInputBorder(),
-                  labelText: 'Unidade',
-                  hintText: 'ex.: %',
-                ),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: d,
-                decoration: const InputDecoration(
-                  border: OutlineInputBorder(),
-                  labelText: 'Tipo e fórmula',
-                  hintText: '<int>, ( [0] * 100 ) / 255',
-                  helperText: '[0] é o 1º byte da resposta, [1] o 2º...',
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              pid.text = "";
-              length.text = "";
-              title.text = "";
-              description.text = "";
-              Navigator.of(ctx).pop();
-            },
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: _verde),
-            onPressed: () async {
-              if (p.text.trim().isEmpty || t.text.trim().isEmpty) {
-                showerror("Preencha ao menos o PID e o nome");
-                return;
-              }
-              await insetpid(index);
-              pid.text = "";
-              length.text = "";
-              title.text = "";
-              description.text = "";
-              if (ctx.mounted) Navigator.of(ctx).pop();
-            },
-            child: const Text('Salvar'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // -------------------------------------------------------------------------
   // Conexão e início da coleta
   // -------------------------------------------------------------------------
-  int get _qtdAtivos => getresponse.where((e) => e.ativo == true).length;
-
-  int get _indiceAtivo {
-    var indexr = 0;
-    for (int i = 0; i < getresponse.length; i++) {
-      if (getresponse[i].ativo) indexr = i;
-    }
-    return indexr;
-  }
 
   /// Simulação ou só GPS: a coleta não usa o adaptador.
   bool get _semAdaptador {
@@ -333,7 +158,7 @@ class _FloatState extends State<InitBluetooth> {
       return;
     }
     if (!mounted) return;
-    await context.router.push(Obddata(elm: _elm, value: _indiceAtivo));
+    await context.router.push(Obddata(elm: _elm, value: 0));
     if (!mounted) return;
     setState(() => _conectado = _elm.conectado);
   }
@@ -352,7 +177,7 @@ class _FloatState extends State<InitBluetooth> {
   String _status() {
     if (_semAdaptador) return 'Pronto para iniciar (não usa o adaptador neste modo)';
     if (_conectando) return 'Conectando a ${_adaptador ?? 'adaptador'}...';
-    if (_conectado) return 'Conectado. Marque os PIDs e toque em "Iniciar coleta".';
+    if (_conectado) return 'Conectado. Toque em "Iniciar coleta".';
     return 'Conecte-se ao adaptador OBD-II';
   }
 
@@ -420,36 +245,26 @@ class _FloatState extends State<InitBluetooth> {
     );
   }
 
-  Widget _itemPid(int index) {
-    final p = getresponse[index];
-    final descricao = (p.description as String).isEmpty ? '' : '  ·  ${p.description}';
+  /// Dados lidos na coleta do abastecimento (fixos).
+  Widget _cartaoDados() {
+    Widget item(IconData icone, String titulo, String pid) => ListTile(
+          dense: true,
+          leading: Icon(icone, color: _verde),
+          title: Text(titulo),
+          trailing: Text(pid, style: const TextStyle(color: Colors.grey)),
+        );
     return Card(
-      margin: const EdgeInsets.fromLTRB(12, 4, 12, 4),
-      child: CheckboxListTile(
-        value: p.ativo as bool,
-        activeColor: _verde,
-        controlAffinity: ListTileControlAffinity.leading,
-        onChanged: (v) => alternarPid(index, v ?? false),
-        title: Text(p.title as String),
-        subtitle: Text('${p.pid}${(p.unit as String).isEmpty ? '' : '  ·  ${p.unit}'}$descricao',
-            maxLines: 2, overflow: TextOverflow.ellipsis),
-        secondary: PopupMenuButton<String>(
-          onSelected: (op) {
-            if (op == 'editar') {
-              pid.text = p.pid;
-              length.text = p.unit;
-              title.text = p.title;
-              description.text = p.description;
-              openedit(pid, length, title, description, index);
-            } else if (op == 'apagar') {
-              deletpid(index);
-            }
-          },
-          itemBuilder: (_) => const [
-            PopupMenuItem(value: 'editar', child: Text('Editar')),
-            PopupMenuItem(value: 'apagar', child: Text('Apagar')),
-          ],
-        ),
+      margin: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: Text('Dados lidos do veículo', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+          item(Icons.local_gas_station, 'Nível de combustível', '01 2F'),
+          item(Icons.badge_outlined, 'VIN (identificação do veículo)', '09 02'),
+        ],
       ),
     );
   }
@@ -475,23 +290,7 @@ class _FloatState extends State<InitBluetooth> {
         padding: const EdgeInsets.only(bottom: 140),
         children: [
           _cabecalho(),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text('PIDs (${_qtdAtivos} de ${getresponse.length} marcados)',
-                      style: const TextStyle(fontWeight: FontWeight.bold)),
-                ),
-                TextButton.icon(
-                  onPressed: () => openedit(pid, length, title, description, -1),
-                  icon: const Icon(Icons.add),
-                  label: const Text('Adicionar'),
-                ),
-              ],
-            ),
-          ),
-          for (int i = 0; i < getresponse.length; i++) _itemPid(i),
+          if (confdata?.obd ?? true) _cartaoDados(),
         ],
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,

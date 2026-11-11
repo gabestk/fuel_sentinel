@@ -14,7 +14,6 @@ import '../dataBaseClass/confSimu.dart';
 // import 'package:http/http.dart' as http; // envio para a AWS desativado
 // import 'package:aws_signature_v4/aws_signature_v4.dart'; // envio para a AWS desativado
 import 'dart:convert';
-import '../dataBaseClass/pidDiscoveryClass.dart';
 import 'package:math_expressions/math_expressions.dart' as mx;
 import '../functions/csv_logger.dart';
 import '../functions/pastas.dart';
@@ -199,8 +198,6 @@ class _ConnectState extends State<Data_Connect> {
   Timer? _timer;
 
   Box? confapp;
-  late Box pidDisc;
-  late pidsDisc pidDiskcong;
   Confdata? confdata;
   var bancoInterno = InternalDatabase();
 
@@ -648,13 +645,8 @@ count = 0;
 
   /// PIDs pedidos ao veículo: os marcados na aba Abastecimento. Sem nenhum
   /// marcado, usa o nível de combustível e o VIN, como antes.
+  /// PIDs lidos no abastecimento: fixos, nível de combustível e VIN.
   String _pidsAtivosJson() {
-    final ativos = pidDisc.values
-        .whereType<pidsDisc>()
-        .where((p) => p.ativo)
-        .map((p) => p.toJson())
-        .toList();
-    if (ativos.isNotEmpty) return json.encode(ativos);
     return json.encode([
       {
         "PID": "01 2F",
@@ -853,8 +845,6 @@ count = 0;
       });
     }
 
-    pidDisc = await Hive.openBox<pidsDisc>('pidsDisc');
-    pidDiskcong = pidDisc.getAt(widget.value);
   }
 
   // ---- Envio para a AWS desativado: por enquanto os dados ficam só no celular ----
