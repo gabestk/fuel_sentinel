@@ -1,6 +1,6 @@
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
-import 'package:obdapp/functions/elm327.dart';
+import 'package:obdapp/functions/obdPlugin.dart';
 import 'package:obdapp/screens/pidsDiscovery.dart';
 import 'package:obdapp/screens/getAllPids.dart';
 
@@ -10,7 +10,6 @@ import '../screens/appMainPage.dart';
 import '../screens/configurePage.dart';
 import '../screens/riderObdUserPage.dart';
 import '../screens/historyRiderUserPage.dart';
-import '../screens/scannerPage.dart';
 
 part '../route/autoroute.gr.dart';
 
@@ -25,7 +24,6 @@ class AppRouter extends RootStackRouter {
         AutoRoute(path: '/initial', page: Appmain.page, children: [
          
           AutoRoute(path: 'ride', page: Ride.page),
-          AutoRoute(path: 'scanner', page: Scannerpage.page),
           AutoRoute(path: 'conf', page: Configurepage.page),
         ]),
         AutoRoute(

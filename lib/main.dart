@@ -8,7 +8,6 @@ import 'package:obdapp/dataBaseClass/obdRawData.dart';
 import 'package:obdapp/dataBaseClass/pidDiscoveryClass.dart';
 import 'package:obdapp/dataBaseClass/vehiclesUser.dart';
 import 'package:obdapp/functions/InternalDatabase.dart';
-import 'package:obdapp/functions/preferencias.dart';
 import 'package:obdapp/route/autoroute.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:workmanager/workmanager.dart';
@@ -36,8 +35,7 @@ Future<void> main() async {
   Hive.registerAdapter(VinAdapter());
   Hive.registerAdapter(pidsDiscAdapter());
   var bancoInterno = InternalDatabase();
-  // aguarda a configuração padrão ser criada na primeira execução
-  await bancoInterno.init();
+  bancoInterno.init();
   await Hive.openBox<Confdata>('conf');
   if (Platform.isAndroid) {
     var statusto = await Permission.storage.status;
@@ -52,9 +50,6 @@ Future<void> main() async {
       await Permission.bluetooth.request();
     }
 
-    // Android 12 ou superior: o Bluetooth exige a permissão "Dispositivos próximos"
-    await [Permission.bluetoothConnect, Permission.bluetoothScan].request();
-
     var statusloc = await Permission.location.status;
     if (!statusloc.isGranted) {
       // If not we will ask for permission first
@@ -64,7 +59,7 @@ Future<void> main() async {
   Workmanager().initialize(
       callbackDispatcher, // The top level function, aka callbackDispatcher
       isInDebugMode:
-          false // true mostra uma notificação a cada execução da tarefa (só para depuração)
+          true // If enabled it will post a notification whenever the task is running. Handy for debugging tasks
       );
   Workmanager().registerOneOffTask("task-identifier", "simpleTask");
 
@@ -95,31 +90,19 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   final _appRouter = AppRouter();
-  ThemeMode _tema = ThemeMode.system;
-
-  ThemeMode get tema => _tema;
-
-  @override
-  void initState() {
-    super.initState();
-    carregarTema().then((t) {
-      if (mounted) setState(() => _tema = t);
-    });
-  }
-
-  /// Troca o tema (Configuração > Aparência) e guarda a escolha.
-  void definirTema(ThemeMode t) {
-    setState(() => _tema = t);
-    salvarTema(t);
-  }
-
   @override
   Widget build(BuildContext context) {
     return MaterialApp.router(
       routerConfig: _appRouter.config(),
-      theme: temaDoApp(Brightness.light),
-      darkTheme: temaDoApp(Brightness.dark),
-      themeMode: _tema,
+      theme: ThemeData(
+        useMaterial3: true,
+
+        // Define the default brightness and colors.
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF26B07F),
+          // ···
+        ),
+      ),
     );
   }
 }

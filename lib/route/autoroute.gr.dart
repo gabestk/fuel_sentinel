@@ -124,14 +124,14 @@ class Loadingpage extends PageRouteInfo<void> {
 class Obddata extends PageRouteInfo<ObddataArgs> {
   Obddata({
     Key? key,
-    required Elm327 elm,
+    required ObdPlugin obd2,
     required int value,
     List<PageRouteInfo>? children,
   }) : super(
           Obddata.name,
           args: ObddataArgs(
             key: key,
-            elm: elm,
+            obd2: obd2,
             value: value,
           ),
           initialChildren: children,
@@ -145,7 +145,7 @@ class Obddata extends PageRouteInfo<ObddataArgs> {
       final args = data.argsAs<ObddataArgs>();
       return obddata(
         key: args.key,
-        elm: args.elm,
+        obd2: args.obd2,
         value: args.value,
       );
     },
@@ -155,19 +155,19 @@ class Obddata extends PageRouteInfo<ObddataArgs> {
 class ObddataArgs {
   const ObddataArgs({
     this.key,
-    required this.elm,
+    required this.obd2,
     required this.value,
   });
 
   final Key? key;
 
-  final Elm327 elm;
+  final ObdPlugin obd2;
 
   final int value;
 
   @override
   String toString() {
-    return 'ObddataArgs{key: $key, elm: $elm, value: $value}';
+    return 'ObddataArgs{key: $key, obd2: $obd2, value: $value}';
   }
 }
 
@@ -205,25 +205,6 @@ class Ride extends PageRouteInfo<void> {
     name,
     builder: (data) {
       return const ride();
-    },
-  );
-}
-
-/// generated route for
-/// [scannerpage]
-class Scannerpage extends PageRouteInfo<void> {
-  const Scannerpage({List<PageRouteInfo>? children})
-      : super(
-          Scannerpage.name,
-          initialChildren: children,
-        );
-
-  static const String name = 'Scannerpage';
-
-  static PageInfo page = PageInfo(
-    name,
-    builder: (data) {
-      return const scannerpage();
     },
   );
 }

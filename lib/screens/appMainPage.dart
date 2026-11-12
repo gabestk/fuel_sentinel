@@ -18,13 +18,13 @@ class appmain extends StatelessWidget with ChangeNotifier {
               automaticallyImplyLeading: false,
               backgroundColor: const Color(0xFF008355),
               title: const Text(
-                'Fuel Sentinel',
+                'OBD APP',
                 style: TextStyle(color: Colors.white, fontSize: 20.0),
               ),
               centerTitle: true,
               leading: const AutoLeadingButton(),
             ),
-            routes: const [Ride(), Scannerpage(), Configurepage()],
+            routes: const [Ride(), Configurepage()],
             bottomNavigationBuilder: (_, tabsRouter) {
               return BottonWidget(
                 tabsRouter: tabsRouter,

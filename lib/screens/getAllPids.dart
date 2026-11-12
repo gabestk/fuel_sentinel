@@ -15,7 +15,6 @@ import 'package:obdapp/widgets/textWidget.dart';
 import 'package:path_provider/path_provider.dart' as path_prov;
 
 import '../dataBaseClass/pidDiscoveryClass.dart';
-import '../functions/csv_logger.dart' show carimboArquivo;
 
 @RoutePage()
 class getallpids extends StatefulWidget {
@@ -243,23 +242,23 @@ class _getallpidsState extends State<getallpids> {
     "AD",
     "AE",
     "AF",
-    "B0",
-    "B1",
-    "B2",
-    "B3",
-    "B4",
-    "B5",
-    "B6",
-    "B7",
-    "B8",
-    "B9",
-    "BA",
-    "BB",
-    "BC",
-    "BD",
-    "BE",
-    "BF",
-    "C0"
+    "C0",
+    "C1",
+    "C2",
+    "C3",
+    "C4",
+    "C5",
+    "C6",
+    "C7",
+    "C8",
+    "C9",
+    "CA",
+    "CB",
+    "CC",
+    "CD",
+    "CE",
+    "CF",
+    "D0"
   ];
   List pidA0r = [];
   late BluetoothDevice help;
@@ -321,10 +320,7 @@ class _getallpidsState extends State<getallpids> {
               a = a.substring(11, 22);
               for (int i = 0; i < a.length; i++) {
                 if (a[i] != " ") {
-                  // cada dígito hexadecimal são 4 PIDs: completa com zeros à esquerda
-                  var help1 = int.parse(a[i], radix: 16)
-                      .toRadixString(2)
-                      .padLeft(4, '0');
+                  var help1 = int.parse(a[i], radix: 16).toRadixString(2);
 
                   var value = "true";
 
@@ -556,6 +552,12 @@ class _getallpidsState extends State<getallpids> {
   }
 
   void getinfo() async {
+    final diretorioUsuario = await path_prov.getApplicationDocumentsDirectory();
+
+    File file =
+        File(diretorioUsuario.path + "/" + DateTime.now().toString() + '.json');
+    String terre = "${diretorioUsuario.path}/${DateTime.now()}";
+    file.create();
     int ui = 0;
 
     obdinfo();
@@ -630,7 +632,7 @@ class _getallpidsState extends State<getallpids> {
     final diretorioUsuario = await path_prov.getExternalStorageDirectory();
 
     File file = File(
-        diretorioUsuario!.path + "/" + carimboArquivo(DateTime.now()) + '.json');
+        diretorioUsuario!.path + "/" + DateTime.now().toString() + '.json');
 
     file.create();
     const JsonEncoder encoder = JsonEncoder();
