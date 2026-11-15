@@ -1,16 +1,34 @@
 # Fuel Sentinel (Aplicativo OBD)
 
 <p align="center">
-  <img src="assets/icon/fuel_sentinel_icon.png" width="180">
+  <img src="assets/icon/fuel_sentinel_icon.png" width="180" alt="Ícone do Fuel Sentinel">
 </p>
+
+<p align="center">
+  <b>Diagnóstico veicular e coleta de dados OBD-II pelo celular</b>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/versão-1.0.0-26B07F" alt="Versão 1.0.0">
+  <img src="https://img.shields.io/badge/status-arquivado%20na%201.0-lightgrey" alt="Arquivado na 1.0">
+  <img src="https://img.shields.io/badge/Flutter-Dart%203.5-02569B?logo=flutter" alt="Flutter">
+  <img src="https://img.shields.io/badge/plataforma-Android-3DDC84?logo=android&logoColor=white" alt="Android">
+</p>
+
+> **Este repositório guarda a versão 1.0 e não recebe mais mudanças.**
+> O desenvolvimento a partir da versão 1.1 continua em
+> [Fuel-Sentinel-V2](https://github.com/gabestk/Fuel-Sentinel-V2), que tem APK para baixar,
+> coleta em CSV no formato do OBDLink e conferência de abastecimento em três etapas.
 
 Um aplicativo mobile em Flutter para diagnóstico veicular e coleta de dados de sensores.
 
-O Fuel Sentinel se conecta a adaptadores OBD-II via Bluetooth, registra o status do veículo e dados de GPS, armazena registros locais utilizando Hive e integra com o Firebase Cloud Firestore para sincronização com o backend.
+O Fuel Sentinel se conecta a adaptadores OBD-II (a porta de diagnóstico do carro) via Bluetooth, registra o status do veículo e dados de GPS, armazena registros locais utilizando Hive e integra com o Firebase Cloud Firestore para sincronização com o backend.
 
 ## Índice
 
 - [O que o projeto faz](#o-que-o-projeto-faz)
+- [Versões](#versões)
+- [Diagramas](#diagramas)
 - [Por que este projeto é útil](#por-que-este-projeto-é-útil)
 - [Principais funcionalidades](#principais-funcionalidades)
 - [Primeiros passos](#primeiros-passos)
@@ -29,6 +47,31 @@ O Fuel Sentinel se conecta a adaptadores OBD-II via Bluetooth, registra o status
 ## O que o projeto faz
 
 O Fuel Sentinel é uma aplicação Flutter desenvolvida para coletar e visualizar dados telemáticos de veículos utilizando informações OBD-II e sensores do dispositivo. Ele gerencia conexões Bluetooth com dispositivos OBD, obtém respostas de PIDs, registra dados de GPS e acelerômetro, e pode sincronizar os dados coletados com o Firebase.
+
+---
+
+## Versões
+
+| Versão | Onde está | Situação |
+|---|---|---|
+| **1.0.0** | este repositório (branches `main`, `test` e `versao-1.0`) | versão original, com escolha livre de PIDs e envio dos dados para a nuvem |
+| **1.1 em diante** | [`gabestk/Fuel-Sentinel-V2`](https://github.com/gabestk/Fuel-Sentinel-V2) | em desenvolvimento |
+
+---
+
+## Diagramas
+
+**Casos de uso do condutor**
+
+<p align="center">
+  <img src="condutor.png" alt="Casos de uso: capturar, visualizar, simular, recuperar e escolher os dados veiculares">
+</p>
+
+**Fluxo de interação**
+
+<p align="center">
+  <img src="fluxodeintera%C3%A7%C3%A3o.png" alt="Fluxo de interação do aplicativo">
+</p>
 
 ---
 
@@ -72,7 +115,7 @@ Este aplicativo é útil para desenvolvedores, pesquisadores e engenheiros que d
 ### Clonar e instalar
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/gabestk/fuel_sentinel.git
 cd fuel_sentinel
 flutter pub get
 ```
